@@ -1,0 +1,15 @@
+services:
+  harbor-dashboard:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      HARBOR_DATA_DIR: /app/data
+    volumes:
+      - harbor-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  harbor-data:

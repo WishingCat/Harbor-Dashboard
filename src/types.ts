@@ -1,0 +1,11 @@
+export type User = {id: string; name: string; username: string|null; email: string; role: 'admin' | 'member'};
+export type Project = {id: string; name: string; task_sets_count: number; tasks_count: number; rollouts_count: number; reviews_count: number};
+export type TaskSet = {id: string; project_id: string; name: string; author: string; created_at: string; tasks_count: number; rollouts_count: number; pending_count: number; approved_count: number};
+export type TaskStatus = 'pending' | 'approved' | 'changes_requested';
+export type Task = {id: string; project_id: string; task_set_id: string; task_set_name: string; slug: string; title: string; description: string; category: string; difficulty: 'easy' | 'medium' | 'hard'; tags: string[]; status: TaskStatus; author: string; created_at: string; updated_at: string; files_count: number; rollouts_count: number; reviews_count: number; is_demo: boolean};
+export type Artifact = {id: string; path: string; size: number; kind: 'task' | 'rollout'; mime_type: string};
+export type Rollout = {id: string; name: string; agent: string; model: string; status: 'passed'|'failed'|'unknown'; reward: number|null; duration_seconds: number|null; created_at: string; files: Artifact[]};
+export type Review = {id: string; author: string; author_id: string; verdict: 'approved'|'changes_requested'|'comment'; body: string; created_at: string};
+export type Detail = {task: Task; files: Artifact[]; rollouts: Rollout[]; reviews: Review[]};
+export type Activity = {id: string; project_id: string; type: 'upload'|'review'|'rollout'; author: string; task_id: string; task_title: string; description: string; created_at: string};
+export type TranslationSettings = {provider: string; base_url: string; model: string; configured: boolean; managed: boolean};

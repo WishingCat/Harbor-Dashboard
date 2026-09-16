@@ -1,0 +1,214 @@
+/* The task directory replaces workspace navigation on desktop.
+ * The document uses page scroll; reviews remain optional. */
+.reader-focus { background: var(--surface); animation: none; }
+.reader-focus [hidden] { display: none !important; }
+.reader-focus .detail-heading { padding: 14px 32px; }
+.reader-heading-top { display: flex; align-items: center; gap: 24px; }
+.reader-heading-top > .back-link { flex-shrink: 0; font-size: 13px; min-height: 36px; }
+.reader-focus .detail-title { flex: 1; min-width: 0; gap: 12px; margin: 0; }
+.reader-focus .detail-title h1 { font-size: 22px; line-height: 1.45; letter-spacing: -.4px; font-weight: 600; }
+.reader-focus .detail-title .status { flex-shrink: 0; }
+.reader-heading-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.reader-heading-actions .button { min-height: 36px; font-size: 13px; }
+.reader-heading-actions .is-open { transform: rotate(180deg); }
+.reader-focus .task-information { padding: 18px 0 6px; }
+.reader-focus .task-information > p { margin: 0 0 14px; max-width: 1120px; color: var(--text); font-size: 14px; line-height: 1.8; }
+.reader-focus .detail-meta { gap: 8px 16px; font-size: 13px; line-height: 1.7; }
+.reader-focus .detail-meta .tag, .reader-focus .detail-updated { display: inline-flex; }
+.reader-focus .detail-updated { margin-left: 0; }
+
+.reader-focus .detail-workspace-bar {
+  position: sticky;
+  top: 56px;
+  z-index: 20;
+  min-height: 56px;
+  gap: 12px 24px;
+  padding: 0 32px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+}
+.reader-source-controls { display: flex; align-items: center; gap: 22px; min-width: 0; }
+.reader-source-controls > .button, .reader-focus .detail-tools > .button { min-height: 36px; font-size: 14px; }
+.reader-focus .detail-source-tabs { gap: 20px; min-height: 56px; width: auto; }
+.reader-focus .detail-source-tabs > button { font-size: 14px; padding-inline: 0; }
+.reader-focus .detail-tools { width: auto; gap: 6px; padding: 0; overflow: visible; flex-wrap: wrap; }
+.reader-focus .detail-tools .button > span, .reader-focus .detail-source-tabs > button > span { font-size: 12px; }
+.reader-focus .rollout-context { padding: 12px 32px; gap: 12px 22px; font-size: 13px; }
+.reader-focus .rollout-context > div { width: auto; }
+.reader-focus .rollout-context > div select { font-size: 13px; max-width: min(400px, 70vw); }
+.reader-focus .rollout-context .mono { font-size: 13px; overflow-wrap: anywhere; }
+
+/* All old reader breakpoints are superseded by these areas. */
+.reader-focus .reader-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'document';
+  align-items: start;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+.reader-focus .reader-workspace.panel-files { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'document'; }
+.reader-focus .reader-workspace.panel-reviews { grid-template-columns: minmax(0, 1fr) 330px; grid-template-areas: 'document reviews'; }
+.reader-document-host { grid-area: document; min-width: 0; width: 100%; scroll-margin-top: 126px; outline: none; }
+.reader-focus .reader-workspace .document-reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: auto; max-height: none; overflow: visible; }
+.reader-focus .document-toolbar { min-height: 44px; height: auto; padding: 7px 32px; gap: 12px; }
+.reader-focus .document-toolbar > div:first-child > span { font-size: 13px; }
+.reader-focus .document-toolbar .icon-button { min-width: 32px; min-height: 32px; }
+.reader-focus .document-toolbar small { font-size: 12px; }
+.reader-focus .reading-columns { flex: none; display: block; height: auto; max-height: none; min-height: 0; overflow: visible; }
+.reader-focus .reading-columns.translated { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.reader-focus .reading-columns > .original-column,
+.reader-focus .reading-columns > .translation-column { min-height: 0; height: auto; max-height: none; overflow: visible; }
+.reader-focus .translation-column { align-self: stretch; background: #fafcfb; border-left: 1px solid var(--border); border-top: 0; scroll-margin-top: 126px; }
+.reader-focus .reading-label { min-height: 40px; height: auto; padding: 9px 24px; font-size: 13px; gap: 12px; }
+.reader-focus .reading-label select { font-size: 14px; }
+.reader-focus .reading-label > span:last-child { font-size: 13px; }
+.reader-focus .markdown-content {
+  width: 100%;
+  max-width: 1120px;
+  padding: 28px 48px 64px;
+  margin-inline: auto;
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text);
+}
+.reader-focus .markdown-content h1 { font-size: 26px; line-height: 1.45; }
+.reader-focus .markdown-content h2 { font-size: 20px; }
+.reader-focus .markdown-content h3 { font-size: 17px; }
+.reader-focus .markdown-content code, .reader-focus .markdown-content pre code { font-size: 14px; }
+.reader-focus .markdown-content table { font-size: 14px; }
+.reader-focus .reading-columns.translated .markdown-content { max-width: none; padding: 28px 32px 48px; font-size: 15px; }
+.reader-focus .reading-columns.translated .markdown-content h1 { font-size: 24px; }
+.reader-focus .reading-columns.translated .markdown-content h2 { font-size: 19px; }
+.reader-focus .code-preview { min-height: 0; height: auto; max-height: none; padding: 28px 32px 48px; font-size: 14px; line-height: 1.85; }
+.reader-focus .translation-start { padding: 40px 24px; margin: 0; }
+.reader-focus .translation-start small, .reader-focus .translation-footer { font-size: 13px; }
+.reader-focus .translation-footer { margin-top: 0; padding: 18px 24px; }
+.reader-focus .translation-footer .text-button { font-size: 14px; }
+.reader-focus .image-preview { padding: 32px; }
+
+/* Directory and reviews scroll independently from the document. */
+.reader-focus .reader-panel {
+  position: sticky;
+  top: 126px;
+  max-height: calc(100dvh - 142px);
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  scrollbar-width: thin;
+  scrollbar-color: #a6b8ad transparent;
+  outline: none;
+}
+.reader-directory-trigger {
+  position: fixed; left: 20px; bottom: 24px; z-index: 45;
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 14px; border: 1px solid #b9cabf;
+  border-radius: 8px; background: var(--surface); color: var(--text);
+  box-shadow: 0 3px 14px #17322614; font-size: 14px; font-weight: 550;
+}
+.reader-directory-trigger:hover, .reader-directory-trigger.is-active { background: #e9f0ec; border-color: #829f8d; }
+.reader-focus .reader-files-panel {
+  position: fixed; grid-area: auto; left: 0; bottom: 0; top: 56px;
+  width: 264px; height: calc(100dvh - 56px); max-height: calc(100dvh - 56px); z-index: 30;
+  border: 0; border-right: 1px solid var(--border); border-radius: 0; box-shadow: none;
+}
+.reader-focus .reader-files-panel .reader-panel-heading { border-radius: 0; }
+.library-page .metrics-strip { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.reader-reviews-panel { grid-area: reviews; border-left: 1px solid var(--border); }
+.reader-panel-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.reader-panel-heading h2 { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
+.reader-panel-heading h2 > span { font-size: 12px; color: var(--muted); font-weight: 400; }
+.reader-panel-heading .icon-button { width: 36px; height: 36px; flex-shrink: 0; }
+.reader-focus .reader-workspace .file-explorer { display: block; padding: 18px 0; height: auto; min-height: 0; max-height: none; overflow: visible; border: 0; background: var(--surface); }
+.reader-focus .explorer-root { display: flex; font-size: 13px; padding: 0 16px 14px; }
+.reader-focus .file-tree { display: block; padding: 0 8px 8px 0; flex: none; min-height: 0; overflow: visible; }
+.reader-focus .tree-file, .reader-focus .tree-directory { display: flex; width: 100%; min-height: 38px; border-radius: 0 5px 5px 0; font-size: 14px; padding: 8px 12px 8px var(--tree-indent, 16px) !important; }
+.reader-focus .tree-file.selected { box-shadow: inset 3px 0 var(--accent); }
+.reader-focus .tree-directory { background: transparent; }
+.reader-focus .tree-directory:hover { background: var(--accent-soft); }
+.reader-focus .reader-workspace .review-panel { display: flex; flex-direction: column; border: 0; min-height: 0; grid-column: auto; grid-row: auto; }
+.reader-focus .reader-workspace .review-messages { grid-column: auto; grid-row: auto; flex: none; min-height: 0; max-height: none; overflow: visible; padding: 20px; }
+.reader-focus .reader-workspace .review-compose { grid-column: auto; grid-row: auto; border-left: 0; border-top: 1px solid var(--border); padding: 20px; }
+.reader-focus .review-message-heading strong, .reader-focus .review-compose > label, .reader-focus .no-reviews strong { font-size: 14px; }
+.reader-focus .review-message > p { margin-left: 0; font-size: 14px; line-height: 1.8; }
+.reader-focus .review-message-heading time { font-size: 12px; }
+.reader-focus .review-verdict { margin-left: 0; font-size: 13px; }
+.reader-focus .review-compose textarea { font-size: 14px; }
+.reader-focus .verdict-options button { min-height: 36px; font-size: 13px; }
+.reader-focus .no-reviews { padding: 18px 0; }
+.reader-panel-scrim { position: fixed; inset: 0; z-index: 70; background: #13291f40; border: 0; cursor: default; }
+
+@media (min-width: 1101px) {
+  .reader-focus { padding-left: 264px; }
+}
+@media (min-width: 1101px) and (max-width: 1400px) {
+  .reader-focus .reading-columns.translated { grid-template-columns: minmax(0, 1fr); }
+  .reader-focus .translation-column { border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (min-width: 1401px) and (max-width: 1650px) {
+  .reader-focus .panel-reviews .reading-columns.translated { grid-template-columns: minmax(0, 1fr); }
+  .reader-focus .panel-reviews .translation-column { border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 1100px) {
+  .reader-focus .reader-workspace,
+  .reader-focus .reader-workspace.panel-files,
+  .reader-focus .reader-workspace.panel-reviews { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'document'; height: auto; min-height: 0; }
+  .reader-focus .reader-panel { position: fixed; top: 0; bottom: 0; z-index: 80; height: 100dvh; max-height: 100dvh; width: min(380px, calc(100vw - 24px)); box-shadow: 0 12px 50px #10291d24; }
+  .reader-focus .reader-files-panel { left: 0; top: 0; bottom: 0; width: min(340px, calc(100vw - 24px)); max-height: 100dvh; z-index: 80; border-radius: 0; }
+  .reader-focus .reader-reviews-panel { right: 0; }
+  .reader-focus .reader-panel-heading { min-height: 60px; padding-inline: 20px; }
+  .reader-focus .review-compose textarea { font-size: 16px; }
+}
+@media (max-width: 900px) {
+  .reader-focus .detail-heading { padding: 12px 24px 18px; }
+  .reader-heading-top { flex-wrap: wrap; gap: 10px 16px; }
+  .reader-heading-actions { margin-left: auto; }
+  .reader-focus .reader-heading-top .detail-title { order: 2; flex-basis: 100%; }
+  .reader-focus .detail-workspace-bar { padding: 0 24px 10px; gap: 0 16px; }
+  .reader-focus .detail-tools { padding-bottom: 0; }
+  .reader-focus .reading-columns.translated { grid-template-columns: minmax(0, 1fr); }
+  .reader-focus .translation-column { border-left: 0; border-top: 1px solid var(--border); }
+  .reader-focus .markdown-content, .reader-focus .reading-columns.translated .markdown-content { padding: 28px 32px 48px; }
+  .reader-focus .rollout-context { padding-inline: 24px; }
+}
+@media (max-width: 600px) {
+  .reader-focus .detail-heading { padding-inline: 18px; }
+  .reader-focus .detail-title { gap: 8px; }
+  .reader-focus .detail-title h1 { font-size: 21px; }
+  .reader-focus .detail-workspace-bar { padding-inline: 14px; }
+  .reader-source-controls { width: 100%; gap: 18px; }
+  .reader-focus .detail-source-tabs { min-height: 50px; gap: 18px; }
+  .reader-focus .detail-tools { width: 100%; justify-content: flex-start; gap: 6px; }
+  .reader-focus .detail-tools > .button, .reader-source-controls > .button { font-size: 13px; padding-inline: 9px; }
+  .reader-focus .detail-tools > .button:last-child { margin-left: 0; }
+  .reader-focus .document-toolbar { padding-inline: 18px; flex-wrap: wrap; }
+  .reader-focus .document-toolbar > div:first-child { flex: 1; }
+  .reader-focus .markdown-content, .reader-focus .reading-columns.translated .markdown-content { padding: 24px 20px 40px; font-size: 15px; }
+  .reader-focus .markdown-content h1 { font-size: 24px; }
+  .reader-focus .code-preview { padding: 24px 20px 40px; font-size: 14px; }
+  .reader-focus .reading-label { padding-inline: 20px; }
+  .reader-focus .rollout-context { padding-inline: 18px; }
+  .reader-focus .rollout-context > div { width: 100%; }
+  .reader-focus .rollout-context > div select { max-width: calc(100vw - 80px); }
+  .reader-focus .translation-column, .reader-document-host { scroll-margin-top: 166px; }
+}
+
+@media (max-width: 360px) {
+  .reader-focus .detail-tools > .button:last-child { min-width: 36px; }
+  .reader-source-controls, .reader-focus .detail-source-tabs { gap: 12px; }
+}
+
+@media (max-width: 600px) {
+  .reader-directory-trigger { left: 14px; bottom: max(18px, env(safe-area-inset-bottom)); }
+  .reader-focus.task-only .detail-workspace-bar { flex-wrap: nowrap; min-height: 52px; padding-bottom: 0; gap: 4px; }
+  .reader-focus.task-only .reader-source-controls { width: auto; flex: 1; }
+  .reader-focus.task-only .detail-tools { width: auto; flex-wrap: nowrap; gap: 2px; }
+  .reader-focus.task-only .detail-tools > .button { padding-inline: 7px; }
+  .reader-focus.task-only .reader-document-host, .reader-focus.task-only .translation-column { scroll-margin-top: 122px; }
+  .reader-focus .markdown-content, .reader-focus .code-preview { padding-bottom: 88px; }
+}

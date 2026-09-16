@@ -1,0 +1,22 @@
+.upload-simple { gap: 20px; }
+.upload-simple .upload-dropzone { padding: 24px 18px; gap: 0; }
+.upload-simple .upload-file-icon { color: var(--accent); margin-bottom: 12px; }
+.upload-simple .upload-dropzone > strong { font-size: 15px; color: var(--text); }
+.upload-simple .upload-dropzone > p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.upload-simple .upload-dropzone .button-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
+.upload-simple .upload-dropzone .button { min-height: 36px; font-size: 13px; }
+.upload-simple .upload-selection { display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; color: var(--accent); }
+.upload-simple .upload-selection > svg { flex-shrink: 0; margin-top: 20px; }
+.upload-simple .upload-selection > div { min-width: 0; flex: 1; }
+.upload-simple .upload-selection span, .upload-simple .upload-selection small { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.upload-simple .upload-selection strong { display: block; margin: 3px 0 6px; font-size: 16px; line-height: 1.5; color: var(--text); font-weight: 550; overflow-wrap: anywhere; }
+.upload-simple .upload-selection .icon-button { width: 32px; height: 32px; flex-shrink: 0; margin-top: 13px; }
+.upload-simple > label { font-size: 14px; color: var(--text); }
+.upload-simple .label-hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+.form-stack.upload-simple label textarea { min-height: 92px; padding: 10px 12px; font-size: 14px; line-height: 1.7; resize: vertical; }
+.upload-simple .form-error { margin: 0; font-size: 13px; line-height: 1.7; }
+.upload-simple .modal-footer { margin-top: 0; padding-top: 18px; }
+@media (max-width: 570px) {
+  .upload-simple .upload-dropzone { padding: 22px 14px; }
+  .form-stack.upload-simple label textarea { font-size: 16px; }
+}
