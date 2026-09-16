@@ -237,7 +237,7 @@ export default function App() {
         : busy || !project || !projectResolved ? <WorkspaceSkeleton />
         : taskSetId && (!taskSet || (taskId && tasks.some(task => task.id === taskId && task.task_set_id !== taskSetId))) ? <div className="page-content"><Empty title="任务集不存在或不属于当前项目" description="" action={<button className="button secondary" onClick={() => openTaskSet(null)}>返回任务集</button>} /></div>
         : taskId ? <TaskDetail key={`${project.id}-${taskId}-${requestedRollout || 'task'}`} project={project} taskSetId={taskSetId || undefined} id={taskId} backLabel="任务列表" initialRolloutId={requestedRollout} user={user} onBack={() => openTaskSet(taskSetId)} onLogin={() => setAuthOpen(true)} onRefresh={refresh} notify={notify} />
-        : page === 'api' ? <ApiGuidePage key={project.id} project={project} projects={projects} taskSets={taskSets} onProjectChange={changeProject} notify={notify} />
+        : page === 'api' ? <ApiGuidePage key={project.id} project={project} projects={projects} taskSets={taskSets} user={user} onProjectChange={changeProject} onLogin={() => setAuthOpen(true)} notify={notify} />
         : page === 'settings' ? <SettingsPage user={user} onLogin={() => setAuthOpen(true)} notify={notify} />
         : page === 'rollouts' ? <RolloutsPage key={project.id} tasks={scopedTasks} onOpen={openTask} />
         : page === 'tasks' && !taskSet ? <TaskSetsPage project={project} taskSets={taskSets} onOpen={openTaskSet} onCreate={() => requestCreate('task-set')} />

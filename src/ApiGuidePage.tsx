@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Check, ChevronDown, Copy, Download, ExternalLink } from 'lucide-react';
-import type { Project, TaskSet } from './types';
+import { Check, ChevronDown, Copy, Download, ExternalLink, KeyRound, LoaderCircle, Trash2 } from 'lucide-react';
+import { api, post } from './api';
+import type { ApiToken, Project, TaskSet, User } from './types';
 import { PRESET_TAGS } from './tags';
 import './api-guide.css';
 
@@ -39,6 +40,93 @@ function CodeExample({title, code, notify}: {title: string; code: string; notify
   return <div className="api-guide-code"><div className="api-guide-code-heading"><span>{title}</span><button type="button" onClick={() => void copy()} aria-label={`复制${title}`}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? '已复制' : '复制'}</button></div><pre ref={pre} tabIndex={0} aria-label={title}><code>{code}</code></pre></div>;
 }
 
+const EXPIRY_CHOICES = [30, 90, 365];
+
+function tokenState(token: ApiToken) {
+  if (token.revoked) return {label: '已撤销', className: 'revoked'};
+  if (new Date(token.expires_at).getTime() <= Date.now()) return {label: '已过期', className: 'revoked'};
+  return {label: '可用', className: 'active'};
+}
+
+const shortDate = (value: string) => new Date(value).toLocaleDateString('zh-CN', {year: 'numeric', month: 'short', day: 'numeric'});
+
+/** Mint a project Token in the browser so an Agent needs no login credentials. */
+function TokenManager({project, projects, user, origin, onLogin, notify}: {project: Project; projects: Project[]; user: User | null; origin: string; onLogin: () => void; notify: (message: string) => void}) {
+  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [name, setName] = useState('Agent upload');
+  const [expiry, setExpiry] = useState(EXPIRY_CHOICES[0]);
+  const [busy, setBusy] = useState(false);
+  const [secret, setSecret] = useState('');
+  const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState('');
+  const projectName = (id: string) => projects.find(item => item.id === id)?.name || id;
+
+  // Revoking cannot be undone, so the button arms first and disarms on its own.
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(''), 5000);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+
+  useEffect(() => {
+    if (!user) {setTokens([]); setLoaded(true); return;}
+    let alive = true;
+    setLoaded(false);
+    api<{tokens: ApiToken[]}>('/auth/tokens')
+      .then(result => {if (alive) {setTokens(result.tokens); setError('');}})
+      .catch(e => {if (alive) setError((e as Error).message);})
+      .finally(() => {if (alive) setLoaded(true);});
+    return () => {alive = false;};
+  }, [user]);
+
+  async function create() {
+    if (busy) return;
+    if (!name.trim()) {setError('请填写 Token 名称，便于以后识别和撤销。'); return;}
+    setBusy(true); setError('');
+    try {
+      const result = await post<{token: string; api_token: ApiToken}>('/auth/tokens', {name: name.trim(), project_id: project.id, expires_in_days: expiry});
+      setSecret(result.token);
+      setTokens(current => [result.api_token, ...current]);
+      notify('Token 已生成');
+    } catch (e) {setError((e as Error).message);}
+    finally {setBusy(false);}
+  }
+  async function revoke(token: ApiToken) {
+    if (busy) return;
+    if (confirming !== token.id) {setConfirming(token.id); return;}
+    setConfirming(''); setBusy(true); setError('');
+    try {
+      await api(`/auth/tokens/${encodeURIComponent(token.id)}`, {method: 'DELETE'});
+      setTokens(current => current.map(item => item.id === token.id ? {...item, revoked: true, revoked_at: new Date().toISOString()} : item));
+      notify('Token 已撤销');
+    } catch (e) {setError((e as Error).message);}
+    finally {setBusy(false);}
+  }
+
+  if (!user) return <div className="token-panel"><p>登录后可以直接生成项目 Token，无需在终端里输入账号密码。</p><button type="button" className="button primary" onClick={onLogin}><KeyRound size={15} />登录并生成 Token</button></div>;
+  return <div className="token-panel">
+    <div className="token-form">
+      <label>Token 名称<input value={name} maxLength={80} disabled={busy} onChange={event => setName(event.target.value)} placeholder="例如 Agent upload" /></label>
+      <label>有效期<select value={expiry} disabled={busy} onChange={event => setExpiry(Number(event.target.value))}>{EXPIRY_CHOICES.map(days => <option key={days} value={days}>{days} 天</option>)}</select></label>
+      <button type="button" className="button primary" disabled={busy} onClick={() => void create()}>{busy ? <LoaderCircle size={15} className="spin" /> : <KeyRound size={15} />}生成 Token</button>
+    </div>
+    <p className="api-guide-note">Token 绑定当前项目 <strong>{project.name}</strong>，代表你的账号上传。切换页面顶部的目标项目即可为其他项目生成。</p>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {secret && <div className="token-reveal">
+      <div className="token-reveal-heading"><KeyRound size={15} /><strong>Token 已生成，只显示这一次</strong></div>
+      <CodeExample title="复制到 Agent 的环境变量" code={`export HARBOR_API_URL=${shellQuote(origin)}\nexport HARBOR_API_TOKEN=${shellQuote(secret)}`} notify={notify} />
+      <p className="api-guide-note">离开或刷新页面后无法再次查看。丢失时撤销旧 Token 并重新生成即可，不需要重置账号密码。</p>
+    </div>}
+    {!loaded ? <p className="api-guide-note">正在读取已有 Token…</p>
+      : tokens.length === 0 ? <p className="api-guide-note">还没有生成过 Token。</p>
+      : <div className="api-guide-table-wrap"><table className="token-table"><thead><tr><th>名称</th><th>项目</th><th>状态</th><th>到期</th><th>最近使用</th><th aria-label="撤销" /></tr></thead><tbody>{tokens.map(token => {
+          const state = tokenState(token);
+          return <tr key={token.id}><td>{token.name}</td><td>{projectName(token.project_id)}</td><td><span className={`token-state ${state.className}`}>{state.label}</span></td><td>{shortDate(token.expires_at)}</td><td>{token.last_used_at ? shortDate(token.last_used_at) : '未使用'}</td><td>{!token.revoked && <button type="button" className={`token-revoke ${confirming === token.id ? 'armed' : ''}`} aria-label={confirming === token.id ? `确认撤销 ${token.name}` : `撤销 ${token.name}`} title="撤销后使用它的 Agent 立即失效" disabled={busy} onClick={() => void revoke(token)}>{confirming === token.id ? '确认撤销' : <Trash2 size={15} />}</button>}</td></tr>;
+        })}</tbody></table></div>}
+  </div>;
+}
+
 const endpoints = [
   ['GET', '/api/v1/projects', 'Token 所属项目'],
   ['GET', '/api/v1/task-sets', '列出任务集'],
@@ -50,7 +138,7 @@ const endpoints = [
   ['POST', '/api/v1/tasks/{task_id}/rollouts', '追加已有产物'],
 ];
 
-export default function ApiGuidePage({project, projects, taskSets, onProjectChange, notify}: {project: Project; projects: Project[]; taskSets: TaskSet[]; onProjectChange: (projectId: string) => void; notify: (message: string) => void}) {
+export default function ApiGuidePage({project, projects, taskSets, user, onProjectChange, onLogin, notify}: {project: Project; projects: Project[]; taskSets: TaskSet[]; user: User | null; onProjectChange: (projectId: string) => void; onLogin: () => void; notify: (message: string) => void}) {
   const [method, setMethod] = useState<'python' | 'curl'>('python');
   const [choice, setChoice] = useState({projectId: project.id, taskSetId: taskSets.find(item => item.project_id === project.id)?.id || ''});
   const sets = taskSets.filter(item => item.project_id === project.id);
@@ -184,8 +272,8 @@ curl --fail-with-body --show-error --get \\
       <p className="api-guide-note">基础地址不含 /api。远程 Agent 请将示例地址换为可访问的平台 HTTPS 地址；localhost 仅指运行命令的机器。</p>
 
       <details className="api-guide-disclosure api-guide-auth">
-        <summary><span>1. 获取项目 Token</span><span className="api-guide-summary-note">首次使用</span><ChevronDown size={17} /></summary>
-        <div className="api-guide-disclosure-body"><p>使用平台账号登录。下面的命令通过登录 Cookie 创建所选项目的 30 天 Token，并读入 <code>HARBOR_API_TOKEN</code>；账号与密码输入不会回显。</p><CodeExample title="登录并创建项目 Token" code={authentication} notify={notify} /><p className="api-guide-note">Token 明文仅创建时返回，请保存到 Agent 的凭证配置。它只用于所属项目的任务集、任务与产物 API；后续请求使用 Bearer Token，不能用它创建其他 Token。</p></div>
+        <summary><span>1. 生成项目 Token</span><span className="api-guide-summary-note">首次使用</span><ChevronDown size={17} /></summary>
+        <div className="api-guide-disclosure-body"><p>在这里直接生成，Agent 只需要这一串 Token 即可上传，不需要平台账号或密码。</p><TokenManager project={project} projects={projects} user={user} origin={origin} onLogin={onLogin} notify={notify} /><p className="api-guide-note">Token 明文仅生成时显示一次，请保存到 Agent 的凭证配置。它只用于所属项目的任务集、任务与产物 API；后续请求使用 Bearer Token，不能用它创建其他 Token，也不能读取平台账号信息。</p><details className="api-guide-nested"><summary>没有浏览器时：在终端里生成<ChevronDown size={16} /></summary><p>下面的命令通过登录 Cookie 创建所选项目的 30 天 Token，并读入 <code>HARBOR_API_TOKEN</code>；账号与密码输入不会回显。</p><CodeExample title="登录并创建项目 Token" code={authentication} notify={notify} /></details></div>
       </details>
 
       <section className="api-guide-quickstart" aria-labelledby="api-guide-start">
