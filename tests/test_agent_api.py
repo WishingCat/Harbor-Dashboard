@@ -487,3 +487,38 @@ def test_reusing_an_idempotency_key_after_deletion_creates_a_new_task(client):
     assert again.json()["replayed"] is False
     assert again.json()["task"]["id"] != task_id
     assert client.get(f"/api/v1/tasks/{again.json()['task']['id']}", headers=headers(token), params={"project_id": "project-aa"}).status_code == 200
+
+
+def test_public_url_pins_returned_links_against_a_forged_host_header(client, monkeypatch):
+    """task_url is handed to reviewers, so a caller must not be able to choose its
+    host. With HARBOR_PUBLIC_URL set, the Host header cannot influence the link."""
+    monkeypatch.setenv("HARBOR_PUBLIC_URL", "https://harbor.example.com")
+    register(client)
+    token = mint(client, project=None)["token"]
+    response = client.post("/api/v1/tasks", headers={**headers(token), "Host": "evil.example.com"},
+                           data={"project_id": "project-aa"},
+                           files=[("files", ("t.zip", make_zip({"task/task.toml": b'version="1.0"',
+                                                                "task/instruction.md": b"# Task"}), "application/zip"))])
+    assert response.status_code == 200, response.text
+    body = response.json()
+    for field in ("task_url", "api_url"):
+        assert body[field].startswith("https://harbor.example.com/"), body[field]
+        assert "evil.example.com" not in body[field]
+
+    task_id = body["task"]["id"]
+    detail = client.get(f"/api/v1/tasks/{task_id}", headers={**headers(token), "Host": "evil.example.com"},
+                        params={"project_id": "project-aa"})
+    assert "evil.example.com" not in detail.json()["task_url"]
+
+
+def test_links_follow_the_request_host_only_when_no_public_url_is_configured(client, monkeypatch):
+    """Documented fallback for local use: without HARBOR_PUBLIC_URL the link mirrors
+    the request, which is why a shared deployment must configure it."""
+    monkeypatch.delenv("HARBOR_PUBLIC_URL", raising=False)
+    register(client)
+    token = mint(client, project=None)["token"]
+    response = client.post("/api/v1/tasks", headers=headers(token), data={"project_id": "project-aa"},
+                           files=[("files", ("t.zip", make_zip({"task/task.toml": b'version="1.0"',
+                                                                "task/instruction.md": b"# Task"}), "application/zip"))])
+    assert response.status_code == 200
+    assert response.json()["task_url"].startswith("http://testserver/")

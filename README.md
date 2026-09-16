@@ -198,7 +198,7 @@ python3 scripts/harbor_upload.py delete TASK_ID --project "$HARBOR_PROJECT_ID"
 
 接口包括 `/api/v1/projects`、`/api/v1/task-sets`、`/api/v1/tags`、`/api/v1/tasks`、`/api/v1/tasks/{task_id}`（GET 与 DELETE）和 `/api/v1/tasks/{task_id}/rollouts`，通过 `Authorization: Bearer KEY` 认证。交互式文档在 `/docs`，OpenAPI 定义在 `/openapi.json`。完整参数、curl 示例、权限与错误处理见站内「API 接口」页面或 [Agent API 使用说明](docs/AGENT_API.md)。
 
-部署到服务器后，将 `HARBOR_API_URL` 改为服务器地址；需要对外分发质检链接时配置 `HARBOR_PUBLIC_URL`，留空则使用请求自身的地址。
+部署到服务器后，将 `HARBOR_API_URL` 改为服务器地址。**共享部署必须配置 `HARBOR_PUBLIC_URL`**：留空时，API 返回的 `task_url` 按请求的 `Host` 头生成，而该头由调用方决定——上传者可以让平台返回一个指向任意域名的质检链接，再借评审流程把它分发出去。配置后链接被固定，`Host` 头不再起作用。仅本机使用时可以留空。
 
 ## 平台统一翻译
 
@@ -237,7 +237,7 @@ TRANSLATION_TRUST_ENV=false
 | `TRANSLATION_MODEL` | 当前配置为 `deepseek-flash` |
 | `TRANSLATION_THINKING` | `disabled`：关闭模型思考输出 |
 | `TRANSLATION_TRUST_ENV` | `false` 直连；`true` 使用服务器代理环境变量 |
-| `HARBOR_PUBLIC_URL` | 可选的平台对外基础地址，用于生成 API 返回的质检链接 |
+| `HARBOR_PUBLIC_URL` | 平台对外基础地址，用于生成 API 返回的质检链接；共享部署必须设置，留空时链接跟随请求的 `Host` 头 |
 | `COOKIE_SECURE` | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true` |
 
 数据库文件为数据目录中的 `harbor.sqlite3`。备份时停止服务后复制**整个数据目录**，同时保存数据库与上传文件；恢复时将完整备份放回相同数据目录。本私有仓库按部署要求跟踪 `deploy/bootstrap/`（用户密码哈希、任务与文件）和 `deploy/runtime.env`（后端配置及翻译密钥）。运行时的 `data/`、个人 `.env`、日志和缓存仍不跟踪。仓库及含账户快照的镜像应保持私有。
