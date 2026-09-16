@@ -61,7 +61,7 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS api_tokens (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
-                    project_id TEXT NOT NULL REFERENCES projects(id), name TEXT NOT NULL,
+                    project_id TEXT REFERENCES projects(id), name TEXT NOT NULL,
                     token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT
                 );
@@ -170,6 +170,40 @@ class Store:
                 BEGIN SELECT RAISE(ABORT, 'Task set project must match its tasks'); END""")
             if db.execute("PRAGMA foreign_key_check").fetchone():
                 raise sqlite3.IntegrityError("Task-set migration found invalid foreign-key references")
+            db.commit()
+            # A NULL project scopes a token to the whole account. SQLite cannot drop
+            # NOT NULL in place, and api_idempotency references api_tokens(id), so the
+            # rebuild runs with foreign keys off. Tokens minted while the column was
+            # mandatory keep their project and stay restricted to it.
+            token_project = next(row for row in db.execute("PRAGMA table_info(api_tokens)") if row["name"] == "project_id")
+            if token_project["notnull"]:
+                db.execute("PRAGMA foreign_keys=OFF")
+                try:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute("""CREATE TABLE api_tokens_rebuilt (
+                        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+                        project_id TEXT REFERENCES projects(id), name TEXT NOT NULL,
+                        token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT
+                    )""")
+                    db.execute("""INSERT INTO api_tokens_rebuilt
+                        (id,user_id,project_id,name,token_hash,created_at,expires_at,last_used_at,revoked_at)
+                        SELECT id,user_id,project_id,name,token_hash,created_at,expires_at,last_used_at,revoked_at
+                        FROM api_tokens""")
+                    moved = db.execute("SELECT COUNT(*) c FROM api_tokens_rebuilt").fetchone()["c"]
+                    if moved != db.execute("SELECT COUNT(*) c FROM api_tokens").fetchone()["c"]:
+                        raise sqlite3.IntegrityError("API token migration lost rows")
+                    db.execute("DROP TABLE api_tokens")
+                    db.execute("ALTER TABLE api_tokens_rebuilt RENAME TO api_tokens")
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id,created_at)")
+                    if db.execute("PRAGMA foreign_key_check").fetchall():
+                        raise sqlite3.IntegrityError("API token migration found invalid foreign-key references")
+                    db.commit()
+                except BaseException:
+                    db.rollback()
+                    raise
+                finally:
+                    db.execute("PRAGMA foreign_keys=ON")
         os.chmod(self.database, 0o600)
 
     @contextmanager

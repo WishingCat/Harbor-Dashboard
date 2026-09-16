@@ -98,3 +98,6 @@
 .token-revoke:hover { color: var(--text); background: var(--polish-subtle); }
 .token-revoke.armed { color: #b3261e; background: #fdecea; font-weight: 550; }
 html[data-theme='dark'] .token-revoke.armed { color: #ffb4ab; background: #4a1410; }
+.api-guide-keyblock { margin: 22px 0 6px; padding: 20px 22px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.api-guide-keyblock h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 17px; }
+.api-guide-keyblock .api-guide-nested { margin-top: 18px; }

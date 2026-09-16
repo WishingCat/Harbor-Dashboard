@@ -810,3 +810,47 @@ def test_omitted_tags_keep_the_manifest_tags_and_an_empty_list_clears_them(clien
     cleared = client.post("/api/tasks", data={**base, "tags": "[]"}, files=files)
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["task"]["tags"] == []
+
+
+def test_existing_project_bound_tokens_survive_the_account_wide_migration(tmp_path):
+    """A database written before keys covered the whole account must keep its keys."""
+    data = tmp_path / "legacy"
+    data.mkdir()
+    (data / "files").mkdir()
+    database = data / "harbor.sqlite3"
+    with sqlite3.connect(database) as db:
+        db.executescript("""
+            CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);
+            CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+            CREATE TABLE api_tokens (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+                project_id TEXT NOT NULL REFERENCES projects(id), name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT);
+            CREATE TABLE api_idempotency (
+                token_id TEXT NOT NULL REFERENCES api_tokens(id), route TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL,
+                response_json TEXT, created_at TEXT NOT NULL,
+                PRIMARY KEY(token_id,route,idempotency_key));
+        """)
+        db.execute("INSERT INTO projects VALUES ('project-aa','ProjectAA'),('paperbenchx','PaperBenchX')")
+        db.execute("INSERT INTO users VALUES ('u1','Owner','owner@example.com',?,'admin','2026-01-01T00:00:00+00:00')",
+                   (password_hash("correct-horse-password"),))
+        db.execute("""INSERT INTO api_tokens VALUES
+            ('t1','u1','paperbenchx','Pinned key','deadbeef','2026-01-01T00:00:00+00:00','2099-01-01T00:00:00+00:00',NULL,NULL)""")
+
+    app = create_app(data, seed=False)
+    with app.state.store.connect() as db:
+        column = next(row for row in db.execute("PRAGMA table_info(api_tokens)") if row["name"] == "project_id")
+        assert not column["notnull"], "migration must drop NOT NULL so keys can cover the account"
+        row = db.execute("SELECT project_id,name,token_hash FROM api_tokens WHERE id='t1'").fetchone()
+        assert (row["project_id"], row["name"], row["token_hash"]) == ("paperbenchx", "Pinned key", "deadbeef")
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # The rebuilt table still accepts new account-wide keys alongside the pinned one.
+    with TestClient(app) as client:
+        client.post("/api/auth/login", json={"username": "owner@example.com", "password": "correct-horse-password"})
+        created = client.post("/api/auth/tokens", json={"name": "Account wide"})
+        assert created.status_code == 200, created.text
+        assert created.json()["api_token"]["project_id"] is None

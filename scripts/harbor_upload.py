@@ -323,7 +323,7 @@ def parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--url", default=argparse.SUPPRESS, help="Dashboard URL (default: HARBOR_API_URL); a trailing /api/v1 is accepted")
     common.add_argument("--token", default=argparse.SUPPRESS, help="Bearer token (prefer HARBOR_API_TOKEN to keep it out of shell history)")
-    common.add_argument("--project", default=argparse.SUPPRESS, help="Project ID; omit to use the token's project")
+    common.add_argument("--project", default=argparse.SUPPRESS, help="Target project ID, or set HARBOR_PROJECT_ID. Required for an account-wide key; a key pinned to one project may omit it")
     common.add_argument("--task-set", default=argparse.SUPPRESS, metavar="ID", help="Task set for task/rollout/status (default: HARBOR_TASK_SET_ID); omit both to use legacy defaults")
     common.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Print the API JSON response")
     common.add_argument("--timeout", type=float, default=argparse.SUPPRESS, help="HTTP timeout in seconds (default: 60)")
@@ -341,7 +341,10 @@ def parser():
     rollout.add_argument("path")
     status = commands.add_parser("status", parents=[common], help="Read review status, task URL and rollout information")
     status.add_argument("task_id")
-    commands.add_parser("task-sets", parents=[common], help="List task sets in the token's project")
+    remove = commands.add_parser("delete", parents=[common], help="Delete a task you uploaded; also removes its rollouts and every review")
+    remove.add_argument("task_id")
+    commands.add_parser("projects", parents=[common], help="List the projects this API key can use")
+    commands.add_parser("task-sets", parents=[common], help="List task sets in a project")
     tasks = commands.add_parser("tasks", parents=[common], help="List tasks, optionally narrowed by tag")
     tasks.add_argument("--tag", action="append", default=None, metavar="TAG",
                        help="Only list tasks carrying this tag; repeat to require every tag given")
@@ -395,6 +398,12 @@ def display(result):
             print(str(item["id"]) + "\t" + str(item.get("name", ""))
                   + "\tTasks: " + str(item.get("tasks_count", 0))
                   + "\tRollouts: " + str(item.get("rollouts_count", 0)))
+    if "projects" in result:
+        print("Projects: " + str(len(result["projects"])))
+        for item in result["projects"]:
+            print(str(item.get("id", "")) + "\t" + str(item.get("name", "")))
+    if result.get("deleted"):
+        print("Deleted task: " + str(result["deleted"]))
     if "preset" in result and "in_use" in result:
         print("Preset tags: " + " ".join(str(tag) for tag in result["preset"]))
         print("Tags in use: " + str(len(result["in_use"])))
@@ -441,12 +450,19 @@ def main(argv=None):
         if not 0 < timeout <= 3600:
             raise CLIError("--timeout must be between 0 and 3600 seconds", code="arguments")
         client = Client(base_url, token, timeout)
-        project = getattr(args, "project", None)
+        project = (getattr(args, "project", None) or os.environ.get("HARBOR_PROJECT_ID", "")).strip()
         fields = {"project_id": project} if project else {}
         task_set = getattr(args, "task_set", os.environ.get("HARBOR_TASK_SET_ID", "")).strip()
-        if task_set and args.command in {"task", "rollout", "status", "tasks", "tags"}:
+        if task_set and args.command in {"task", "rollout", "status", "delete", "tasks", "tags"}:
             fields["task_set_id"] = task_set
-        if args.command in {"task-sets", "tasks", "tags"}:
+        if args.command == "projects":
+            result = client.send("GET", "/api/v1/projects")
+        elif args.command == "delete":
+            endpoint = "/api/v1/tasks/" + parse.quote(args.task_id, safe="")
+            if fields:
+                endpoint += "?" + parse.urlencode(fields)
+            result = client.send("DELETE", endpoint)
+        elif args.command in {"task-sets", "tasks", "tags"}:
             endpoint = {"task-sets": "/api/v1/task-sets", "tasks": "/api/v1/tasks", "tags": "/api/v1/tags"}[args.command]
             query = list(fields.items())
             if args.command == "tasks":

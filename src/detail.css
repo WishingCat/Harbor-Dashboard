@@ -6,3 +6,6 @@
 @media(min-width:1001px){.reader-workspace{height:max(640px,calc(100vh - 317px))}.document-reader{min-height:0}.reading-columns{overflow:auto;min-height:0}.reading-columns.translated{overflow:hidden}.reading-columns.translated>.original-column,.reading-columns.translated>.translation-column{overflow:auto}.file-explorer{overflow:hidden}.file-tree{overflow-y:auto;min-height:0}.review-panel{min-height:0}.review-messages{min-height:80px}.review-compose{flex-shrink:0}}
 @media(min-width:1001px) and (max-width:1250px){.reader-workspace.with-translation{height:auto}.reader-workspace.with-translation .document-reader{height:700px}.reader-workspace.with-translation .file-explorer{max-height:700px}}
 @media(prefers-reduced-motion:reduce){.detail-page,.stream-cursor{animation:none}}
+
+.task-delete.armed { color: #b3261e; border-color: #b3261e; background: #fdecea; font-weight: 550; }
+html[data-theme='dark'] .task-delete.armed { color: #ffb4ab; border-color: #ffb4ab; background: #4a1410; }

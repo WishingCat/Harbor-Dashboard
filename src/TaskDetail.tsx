@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, CircleCheck, Clock3, Code2, Download, Eye, FileText, FolderClosed, FolderOpen, GitBranch, Languages, Link2, LoaderCircle, MessageSquare, Play, RefreshCw, Send, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, CircleCheck, Clock3, Code2, Download, Eye, FileText, FolderClosed, FolderOpen, GitBranch, Languages, Link2, LoaderCircle, MessageSquare, Play, RefreshCw, Send, Trash2, X } from 'lucide-react';
 import { api, post, projectPath, relativeTime, sizeLabel } from './api';
 import { Avatar, categories, difficultyLabels, Empty, FileIcon, Loading, Status } from './components';
 import ArtifactMarkdown from './ArtifactMarkdown';
@@ -23,6 +23,8 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
   const [translationOpen, setTranslationOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<AuxiliaryPanel|null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [isDrawer, setIsDrawer] = useState(() => matchMedia(DRAWER_QUERY).matches);
   const filesButton = useRef<HTMLButtonElement>(null);
   const reviewsButton = useRef<HTMLButtonElement>(null);
@@ -113,6 +115,23 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
     const fileList = next === 'task' ? files : rollout?.files || [];
     setSelected(fileList.find(f => f.path.endsWith(next === 'task' ? 'instruction.md' : 'result.json')) || fileList[0] || null);
   }
+  // Deleting cannot be undone, so the button arms first and disarms on its own.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const timer = setTimeout(() => setConfirmDelete(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmDelete]);
+  async function removeTask() {
+    if (deleting) return;
+    if (!confirmDelete) {setConfirmDelete(true); return;}
+    setConfirmDelete(false); setDeleting(true);
+    try {
+      await api(projectPath(`/tasks/${id}`, project.id), {method: 'DELETE'});
+      notify('任务已删除');
+      onBack();
+      await onRefresh();
+    } catch (e) {notify((e as Error).message); setDeleting(false);}
+  }
   async function shareTask() {
     try {
       const link = new URL(location.href);
@@ -125,7 +144,7 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
   return <div className={`detail-page reader-focus ${rollouts.length ? 'has-rollouts' : 'task-only'}`}>
     {isDrawer && <button ref={filesButton} className={`reader-directory-trigger ${activePanel === 'files' ? 'is-active' : ''}`} aria-expanded={activePanel === 'files'} aria-controls="task-files-panel" onClick={() => togglePanel('files')}><FolderOpen size={18} /><span>目录</span></button>}
     <div className="detail-heading">
-      <div className="reader-heading-top"><button className="back-link" onClick={onBack}><ArrowLeft size={15} />{backLabel}</button><div className="detail-title"><h1>{task.title}</h1><Status status={task.status} /></div><div className="reader-heading-actions"><button className="button ghost small" aria-expanded={infoOpen} aria-controls="task-information" onClick={() => setInfoOpen(!infoOpen)}>任务信息<ChevronDown size={14} className={infoOpen ? 'is-open' : ''} /></button><button className="button ghost small" onClick={() => void shareTask()}><Link2 size={15} />分享任务</button></div></div>
+      <div className="reader-heading-top"><button className="back-link" onClick={onBack}><ArrowLeft size={15} />{backLabel}</button><div className="detail-title"><h1>{task.title}</h1><Status status={task.status} /></div><div className="reader-heading-actions"><button className="button ghost small" aria-expanded={infoOpen} aria-controls="task-information" onClick={() => setInfoOpen(!infoOpen)}>任务信息<ChevronDown size={14} className={infoOpen ? 'is-open' : ''} /></button><button className="button ghost small" onClick={() => void shareTask()}><Link2 size={15} />分享任务</button>{detail.can_delete && <button className={`button ghost small task-delete ${confirmDelete ? 'armed' : ''}`} disabled={deleting} title="删除后任务文件、Rollout 与评审都会一并移除" onClick={() => void removeTask()}>{deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{confirmDelete ? '确认删除' : '删除任务'}</button>}</div></div>
       <div className="task-information" id="task-information" hidden={!infoOpen}>
         {task.description && <p>{task.description}</p>}
         <div className="detail-meta"><Avatar name={task.author} size="small" /><span>{task.author}</span><span>{categories[task.category] || task.category}</span><span>{difficultyLabels[task.difficulty]}</span>{task.tags.map(t => <span className="tag" key={t}>{t}</span>)}{task.is_demo && <span className="demo-label">临时任务</span>}<span className="detail-updated">更新于 {relativeTime(task.updated_at)}</span></div>

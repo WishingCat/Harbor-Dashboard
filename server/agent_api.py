@@ -20,7 +20,8 @@ from .storage import now, uid
 
 class CreateTokenBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    project_id: str
+    # Omit to cover every project the account can reach; each call then names its own.
+    project_id: str | None = None
     expires_in_days: int = Field(default=30, ge=1, le=365)
 
 
@@ -86,8 +87,8 @@ def archive_links(request, task, rollout_id=None):
             "api_url": base + "/api/v1/tasks/" + quote(task["id"], safe="") + "?" + urlencode({"project_id": task["project_id"], "task_set_id": task["task_set_id"]})}
 
 
-def install_agent_api(app, store, archives, cookie_user, require_project, require_task, list_projects, list_tasks, get_task, require_task_set, list_task_sets, list_tags):
-    bearer = HTTPBearer(auto_error=False, scheme_name="AgentBearer", description="Personal hbr_ token bound to one project. Create it with POST /api/auth/tokens using an authenticated session; it grants only /api/v1 access.")
+def install_agent_api(app, store, archives, cookie_user, require_project, require_task, list_projects, list_tasks, get_task, require_task_set, list_task_sets, list_tags, delete_task):
+    bearer = HTTPBearer(auto_error=False, scheme_name="AgentBearer", description="Personal hbr_ API key covering every project you can reach. Create it with POST /api/auth/tokens using an authenticated session; it grants only /api/v1 access, and each call names its own project_id.")
 
     def unauthorized():
         return HTTPException(401, "API Token 无效、已过期或已撤销", headers={"WWW-Authenticate": "Bearer"})
@@ -112,9 +113,17 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
         return principal
 
     def bound_project(principal, requested):
-        if requested is not None and requested != principal["project_id"]:
-            raise HTTPException(404, "项目不存在")
-        return principal["project_id"]
+        # A key minted before keys covered the whole account stays pinned to its
+        # project. An account-wide key carries no project, so every call names one
+        # rather than silently landing in a default the caller never chose.
+        if principal["project_id"] is not None:
+            if requested is not None and requested != principal["project_id"]:
+                raise HTTPException(404, "项目不存在")
+            return principal["project_id"]
+        if requested is None:
+            available = "、".join(project["id"] for project in list_projects()["projects"])
+            raise HTTPException(422, f"请用 project_id 指定目标项目：{available}")
+        return requested
 
     def normalized_key(value):
         if value is None:
@@ -178,7 +187,8 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
             rows = db.execute("SELECT * FROM api_tokens WHERE user_id=? ORDER BY created_at DESC", (user["id"],))
             return {"tokens": [token_metadata(row) for row in rows]}
 
-    @app.post("/api/auth/tokens", tags=["Personal API tokens"], summary="Create a project-bound token; secret is returned once")
+    @app.post("/api/auth/tokens", tags=["Personal API tokens"], summary="Create an API key; the secret is returned once",
+              description="Omit project_id for a key covering every project you can reach, which is the normal case. Supplying it pins the key to that one project.")
     def create_token(body: CreateTokenBody, user=Depends(cookie_user)):
         if not body.name.strip():
             raise HTTPException(422, "请填写Token名称")
@@ -186,7 +196,8 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
         created = datetime.now(timezone.utc)
         token_id = uid()
         with store.connect() as db:
-            require_project(db, body.project_id)
+            if body.project_id is not None:
+                require_project(db, body.project_id)
             db.execute("""INSERT INTO api_tokens
                 (id,user_id,project_id,name,token_hash,created_at,expires_at,last_used_at,revoked_at)
                 VALUES (?,?,?,?,?,?,?,NULL,NULL)""", (
@@ -205,9 +216,13 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
             db.execute("UPDATE api_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE id=?", (now(), token_id))
         return {"ok": True}
 
-    @app.get("/api/v1/projects", tags=["Agent API v1"], summary="Get the project bound to this Bearer token")
+    @app.get("/api/v1/projects", tags=["Agent API v1"], summary="List the projects this API key can use",
+             description="An account-wide key lists every project. A key minted before keys covered the whole account lists only the project it is pinned to.")
     def agent_projects(principal=Depends(agent_user)):
-        return {"projects": [project for project in list_projects()["projects"] if project["id"] == principal["project_id"]]}
+        projects = list_projects()["projects"]
+        if principal["project_id"] is None:
+            return {"projects": projects}
+        return {"projects": [project for project in projects if project["id"] == principal["project_id"]]}
 
     @app.get("/api/v1/task-sets", tags=["Agent API v1"], summary="List task sets in the token's project")
     def agent_task_sets(project_id: str | None = Query(None), principal=Depends(agent_user)):
@@ -237,10 +252,16 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
     def agent_tags(project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
         return list_tags(bound_project(principal, project_id), task_set_id)
 
-    @app.get("/api/v1/tasks/{task_id}", tags=["Agent API v1"], summary="Inspect task files, existing rollouts and human reviews")
+    @app.get("/api/v1/tasks/{task_id}", tags=["Agent API v1"], summary="Inspect task files, existing rollouts and human reviews",
+             description="can_delete reports whether this key's owner may delete the task: its author, or an administrator.")
     def agent_task(task_id: str, request: Request, project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
-        detail = get_task(task_id, bound_project(principal, project_id), task_set_id)
+        detail = get_task(task_id, bound_project(principal, project_id), task_set_id, principal)
         return {**detail, **archive_links(request, detail["task"]), "replayed": False}
+
+    @app.delete("/api/v1/tasks/{task_id}", tags=["Agent API v1"], summary="Delete a task you uploaded",
+                description="Only the task's author or an administrator may delete it. This removes the task files, every rollout, every human review — including reviews written by other people — and the activity entries. It cannot be undone.")
+    def agent_delete_task(task_id: str, project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
+        return delete_task(task_id, principal, bound_project(principal, project_id), task_set_id)
 
     @app.post("/api/v1/tasks", tags=["Agent API v1"], summary="Archive a Harbor task and any included rollout artifacts", description="Upload ZIP or directory files with optional paths JSON, description and tags (a JSON array of at most 20 strings, each at most 50 characters; omit it to keep the tags declared in task.toml). Nothing is executed. Idempotency-Key (1–128 characters) is scoped to this token and route; identical logical files and metadata replay the original response, changed content returns 409.", responses=archive_response_docs("task"))
     async def agent_create_task(request: Request, files: list[UploadFile] = File(...), paths: str = Form("[]"),

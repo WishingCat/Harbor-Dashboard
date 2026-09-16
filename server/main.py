@@ -193,6 +193,32 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
             raise HTTPException(404, "任务不存在")
         return task
 
+    def may_delete_task(task, user):
+        """Same rule the platform already uses for appending rollouts."""
+        return bool(user) and (user["role"] == "admin" or task["author_id"] == user["id"])
+
+    def delete_task(task_id, user, project_id=None, task_set_id=None):
+        obsolete = []
+        with store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = require_task(db, task_id, project_id, task_set_id)
+            if not may_delete_task(task, user):
+                raise HTTPException(403, "只有任务作者或管理员可以删除任务")
+            obsolete = [store.blobs / row["id"] for row in db.execute("SELECT id FROM files WHERE task_id=?", (task_id,))]
+            # Files reference rollouts; remove children before the task row.
+            for table in ("files", "reviews", "activity", "rollouts"):
+                db.execute(f"DELETE FROM {table} WHERE task_id=?", (task_id,))
+            db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+            # A cached idempotent response would otherwise replay a task that no
+            # longer exists; archive_once trusts the cache when the payload matches.
+            # Task IDs are 32 hex characters, so this substring cannot collide.
+            db.execute("DELETE FROM api_idempotency WHERE response_json LIKE ?", (f"%{task_id}%",))
+        # Never unlink before the database transaction has committed.
+        for path in obsolete:
+            if path.is_file():
+                path.unlink()
+        return {"ok": True, "deleted": task_id}
+
     def require_file(db, file_id, project_id=None, task_set_id=None):
         if project_id is not None:
             require_project(db, project_id)
@@ -381,14 +407,22 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
                 require_task_set(db, task_set_id, project_id)
             return archives.create_task(db, prepared, user, project_id, task_set_id)
 
-    @app.get("/api/tasks/{task_id}")
-    def task_detail(task_id: str, project_id: str | None = Query(None), task_set_id: str | None = Query(None)):
+    def task_detail(task_id: str, project_id=None, task_set_id=None, user=None):
         with store.connect() as db:
-            require_task(db, task_id, project_id, task_set_id)
+            task = require_task(db, task_id, project_id, task_set_id)
             rollout_ids = db.execute("SELECT id FROM rollouts WHERE task_id=? ORDER BY created_at DESC", (task_id,)).fetchall()
             reviews = db.execute("SELECT id,author,author_id,verdict,body,created_at FROM reviews WHERE task_id=? ORDER BY created_at DESC,rowid DESC", (task_id,)).fetchall()
             return {"task": store.task(db, task_id), "files": store.file_list(db, task_id=task_id),
-                    "rollouts": [store.rollout(db, r["id"]) for r in rollout_ids], "reviews": [dict(r) for r in reviews]}
+                    "rollouts": [store.rollout(db, r["id"]) for r in rollout_ids], "reviews": [dict(r) for r in reviews],
+                    "can_delete": may_delete_task(task, user)}
+
+    @app.get("/api/tasks/{task_id}")
+    def read_task(task_id: str, project_id: str | None = Query(None), task_set_id: str | None = Query(None), user=Depends(current_user)):
+        return task_detail(task_id, project_id, task_set_id, user)
+
+    @app.delete("/api/tasks/{task_id}")
+    def remove_task(task_id: str, project_id: str | None = Query(None), task_set_id: str | None = Query(None), user=Depends(authenticated)):
+        return delete_task(task_id, user, project_id, task_set_id)
 
     @app.post("/api/tasks/{task_id}/rollouts")
     async def create_rollout(task_id: str, name: str = Form(""), agent: str = Form(""), model: str = Form(""),
@@ -547,7 +581,7 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     from .agent_api import install_agent_api
-    install_agent_api(app, store, archives, authenticated, require_project, require_task, projects, tasks, task_detail, require_task_set, task_sets, tags)
+    install_agent_api(app, store, archives, authenticated, require_project, require_task, projects, tasks, task_detail, require_task_set, task_sets, tags, delete_task)
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):

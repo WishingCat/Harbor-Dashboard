@@ -2,19 +2,19 @@
 
 Harbor Dashboard 按「项目 → 任务集 → 任务」组织内容，并提供 HTTP API 和零依赖 Python 客户端。Agent 选择任务集，上传本地任务及已有 Rollout 文件后，会获得供团队质检的任务页面链接。
 
-网站左侧底部的「API 接口」提供同类接入说明和示例，也可直接访问 `/?project=PROJECT_ID&view=api`。这是指南页面；项目 Token 按下面的 HTTP 流程获取。
+网站左侧底部的「API 接口」提供同类接入说明和示例，也可直接访问 `/?project=PROJECT_ID&view=api`。该页面已包含 Agent 接入所需的全部信息，并可在页面顶部直接生成 API Key；本文是同一套说明的文本版。
 
-## 1. 获取项目 Token
+## 1. 获取 API Key
 
-登录平台后，可在网页中新建项目。项目 Token 通过 HTTP 接口管理，设置页不再提供管理区域。
+登录平台后，在「API 接口」页面顶部的「生成 API Key」区域即可生成、查看和撤销 Key。没有浏览器时按下面的 HTTP 流程获取。
 
-每个 Token 只绑定一个项目。Agent 可在该项目内新建或选择任务集，再上传任务、读取任务与评审、追加已有运行产物。上传内容归创建 Token 的用户所有；追加产物沿用任务作者或管理员权限。Token 不能用于新建项目、修改平台设置、创建更多 Token 或调用翻译服务。
+一把 API Key 适用于创建者能访问的**全部项目**，不必为每个项目各生成一把。Agent 可以新建或选择任务集，上传任务、读取任务与评审、追加已有运行产物，以及删除自己上传的任务。上传内容归创建 Key 的用户所有；追加产物和删除任务沿用任务作者或管理员权限。Key 不能用于新建项目、修改平台设置、生成更多 Key 或调用翻译服务。
 
-创建 Token 时必须指定 `project_id`，可从项目页面 URL 的 `project` 参数或 `GET /api/projects` 获得。获取 Token 后，Agent 客户端和 `/api/v1` 的 `project_id` 可以省略，默认使用 Token 绑定的项目。
+因为 Key 不绑定项目，**每次调用都必须指定 `project_id`**，省略会返回 `422` 并列出可用项目。项目 ID 可从项目页面 URL 的 `project` 参数、`GET /api/v1/projects` 或客户端的 `projects` 子命令获得。
 
 以下 `HARBOR_API_URL` 为平台网站的基础地址，不含 `/api`。本机开发可使用 `http://localhost:5173`，其他机器上的 Agent 使用可访问的平台域名或服务器地址。
 
-下面先以用户名或邮箱、密码登录，保存会话 Cookie，再创建项目 Token。将 `PROJECT_ID` 替换为目标项目 ID；有效期为 1–365 天，省略时为 30 天。登录输入不会回显，Token 响应保存到临时文件后读入环境变量。
+下面先以用户名或邮箱、密码登录，保存会话 Cookie，再创建 API Key。将 `PROJECT_ID` 替换为后续上传的目标项目 ID；有效期为 1–365 天，省略时为 30 天。登录输入不会回显，Key 响应保存到临时文件后读入环境变量。
 
 ```bash
 export HARBOR_API_URL='https://harbor.example.com'
@@ -32,7 +32,7 @@ harbor_auth() {
   curl --fail-with-body --silent --show-error \
     "$HARBOR_API_URL/api/auth/tokens" \
     -b "$harbor_cookie" -H 'Content-Type: application/json' \
-    -d '{"name":"Agent upload","project_id":"PROJECT_ID","expires_in_days":30}' -o "$harbor_token" &&
+    -d '{"name":"Agent upload","expires_in_days":30}' -o "$harbor_token" &&
   HARBOR_API_TOKEN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$harbor_token")" &&
   test -n "$HARBOR_API_TOKEN" && export HARBOR_API_TOKEN
   harbor_status=$?
@@ -44,9 +44,11 @@ harbor_auth() {
 harbor_auth
 ```
 
-创建响应为 `{"token":"...","api_token":{"id":"...",...}}`，明文 `token` 仅在创建时返回。请将其保存到 Agent 的凭证配置中。使用登录 Cookie 调用 `GET /api/auth/tokens` 可列出本人的 Token 元数据，`DELETE /api/auth/tokens/{token_id}` 可撤销；这两个接口和创建接口均不能使用 Bearer Token 代替登录 Cookie。
+创建响应为 `{"token":"...","api_token":{"id":"...","project_id":null,...}}`，明文 `token` 仅在创建时返回，`project_id` 为 `null` 表示适用于全部项目。请将其保存到 Agent 的凭证配置中。使用登录 Cookie 调用 `GET /api/auth/tokens` 可列出本人的 Key 元数据，`DELETE /api/auth/tokens/{token_id}` 可撤销；这两个接口和创建接口均不能使用 Bearer Key 代替登录 Cookie。
 
-Token 使用 `Authorization: Bearer ...` 请求头传递，不放在 URL 中。远程部署使用现有网站的 HTTPS 地址。
+在此之前生成、绑定了单个项目的旧 Key 仍然有效，并继续只能访问原项目。
+
+Key 使用 `Authorization: Bearer ...` 请求头传递，不放在 URL 中。远程部署使用现有网站的 HTTPS 地址。
 
 ## 2. 用 Python 客户端上传
 
@@ -76,7 +78,7 @@ python3 harbor_upload.py task /path/to/my-task \
   --json
 ```
 
-`--task-set ID` 优先于环境变量 `HARBOR_TASK_SET_ID`。配置环境变量后，`task`、`rollout` 和 `status` 都会使用该任务集；列出或创建任务集仍以 Token 的项目为范围。也可加 `--project PROJECT_ID` 明确校验目标项目。
+`--task-set ID` 优先于环境变量 `HARBOR_TASK_SET_ID`。配置环境变量后，`task`、`rollout`、`status` 和 `delete` 都会使用该任务集。`--project PROJECT_ID`（或环境变量 `HARBOR_PROJECT_ID`）指定目标项目；账号级 Key 必须提供，缺失时服务端返回 `422` 并列出可用项目。
 
 上传任务目录或 ZIP，简介可省略；以下命令使用环境变量中的任务集：
 
@@ -107,7 +109,7 @@ python3 harbor_upload.py rollout TASK_ID /path/to/job-results --task-set "$HARBO
 python3 harbor_upload.py status TASK_ID --task-set "$HARBOR_TASK_SET_ID" --json
 ```
 
-为兼容原有用法，如果既没有 `--task-set`，也没有 `HARBOR_TASK_SET_ID`，上传新任务会使用项目的默认任务集（不存在时由服务端按需创建）；读取任务和追加产物会识别任务实际所属的任务集。显式指定了任务集时，服务端会校验它与目标任务及 Token 项目一致。需要恢复省略任务集的用法时，可先执行 `unset HARBOR_TASK_SET_ID`。
+为兼容原有用法，如果既没有 `--task-set`，也没有 `HARBOR_TASK_SET_ID`，上传新任务会使用项目的默认任务集（不存在时由服务端按需创建）；读取任务和追加产物会识别任务实际所属的任务集。显式指定了任务集时，服务端会校验它与目标任务及请求的项目一致。需要恢复省略任务集的用法时，可先执行 `unset HARBOR_TASK_SET_ID`。
 
 客户端默认根据上传内容及参数（包括任务集 ID）生成 `Idempotency-Key`，相同内容和目标任务集重试会返回原导入结果；明确需要创建一份新导入时使用 `--new-upload`。也可以通过 `--idempotency-key` 设置自己的重试标识。
 
@@ -121,7 +123,7 @@ python3 harbor_upload.py status TASK_ID --task-set "$HARBOR_TASK_SET_ID" --json
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | `/api/v1/projects` | 查看 Token 所属项目 |
+| GET | `/api/v1/projects` | 查看本 Key 可用的项目 |
 | GET | `/api/v1/task-sets` | 查看项目内任务集及任务、运行、评审计数 |
 | POST | `/api/v1/task-sets` | 在 Token 项目内新建任务集 |
 | GET | `/api/v1/tasks` | 查看项目任务，可用 `task_set_id` 和 `tag` 筛选 |
@@ -129,8 +131,9 @@ python3 harbor_upload.py status TASK_ID --task-set "$HARBOR_TASK_SET_ID" --json
 | POST | `/api/v1/tasks` | 上传新任务及包内已有 Rollout |
 | GET | `/api/v1/tasks/{task_id}` | 读取任务、文件、已有结果及评审 |
 | POST | `/api/v1/tasks/{task_id}/rollouts` | 给已有任务追加结果文件 |
+| DELETE | `/api/v1/tasks/{task_id}` | 删除任务，仅作者或管理员 |
 
-`project_id` 可以省略，默认使用 Token 绑定项目；显式指定其他项目会被拒绝。任务上传和产物追加通过 multipart 字段传递 `task_set_id`，任务列表和详情通过查询参数传递。省略时沿用上文的兼容规则。
+**`project_id` 必填**，省略返回 `422` 并列出可用项目（绑定了单个项目的旧 Key 除外，它们可以省略）。任务上传和产物追加通过 multipart 字段传递 `project_id` / `task_set_id`，任务列表、详情和删除通过查询参数传递。任务集省略时沿用上文的兼容规则。
 
 ### 新建与列出任务集
 
@@ -225,7 +228,21 @@ curl --fail-with-body --show-error \
   -H "Authorization: Bearer $HARBOR_API_TOKEN"
 ```
 
-响应中的 `task.status` 为 `pending`（待评审）、`approved`（通过）或 `changes_requested`（需修改），`reviews` 包含评审意见。人工质检状态与上传结果中的 Reward 分开保存。
+响应中的 `task.status` 为 `pending`（待评审）、`approved`（通过）或 `changes_requested`（需修改），`reviews` 包含评审意见，`can_delete` 说明当前 Key 是否有权删除该任务。人工质检状态与上传结果中的 Reward 分开保存。
+
+### 删除任务
+
+仅任务作者或管理员可以删除：
+
+```bash
+python3 harbor_upload.py delete TASK_ID --project "$HARBOR_PROJECT_ID"
+
+curl --fail-with-body --show-error -X DELETE \
+  "$HARBOR_API_URL/api/v1/tasks/TASK_ID?project_id=$HARBOR_PROJECT_ID" \
+  -H "Authorization: Bearer $HARBOR_API_TOKEN"
+```
+
+响应为 `{"ok": true, "deleted": "TASK_ID"}`。**删除不可撤销**，会一并删除任务文件、全部 Rollout 结果、**其他人提交的评审**以及活动记录。删除请求不会自动重试。删除后使用原 `Idempotency-Key` 重新上传会正常创建新任务，不会返回已删除任务的旧响应。网页端在任务页右上角也有「删除任务」按钮。
 
 ## 4. 重试和错误
 

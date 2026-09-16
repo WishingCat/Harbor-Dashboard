@@ -38,7 +38,11 @@ def register(client, email="owner@example.com"):
 
 
 def mint(client, project="project-aa", **fields):
-    response = client.post("/api/auth/tokens", json={"name": "Agent uploader", "project_id": project, **fields})
+    """Pass project=None for an account-wide key; a project pins it the legacy way."""
+    body = {"name": "Agent uploader", **fields}
+    if project is not None:
+        body["project_id"] = project
+    response = client.post("/api/auth/tokens", json=body)
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -389,3 +393,97 @@ def test_changing_only_the_tags_conflicts_under_one_idempotency_key(client):
 def test_agent_tags_endpoint_requires_a_token(client):
     register(client)
     assert client.get("/api/v1/tags").status_code == 401
+
+
+def test_account_wide_key_reaches_every_project_and_demands_an_explicit_one(client):
+    register(client)
+    token = mint(client, project=None)
+    assert token["api_token"]["project_id"] is None
+    token = token["token"]
+
+    assert {p["id"] for p in client.get("/api/v1/projects", headers=headers(token)).json()["projects"]} == {"project-aa", "paperbenchx"}
+
+    created = {}
+    for project in ("project-aa", "paperbenchx"):
+        response = post_task(client, token, project=project)
+        assert response.status_code == 200, response.text
+        created[project] = response.json()["task"]["id"]
+        assert response.json()["task"]["project_id"] == project
+
+    # Omitting the project must not quietly land the upload in a default one.
+    missing = post_task(client, token)
+    assert missing.status_code == 422
+    assert "project_id" in missing.json()["detail"] and "project-aa" in missing.json()["detail"]
+    assert client.get("/api/v1/tasks", headers=headers(token)).status_code == 422
+    assert client.get("/api/v1/task-sets", headers=headers(token)).status_code == 422
+
+    for project, task_id in created.items():
+        listed = client.get("/api/v1/tasks", headers=headers(token), params={"project_id": project})
+        assert [task["id"] for task in listed.json()["tasks"]] == [task_id]
+    assert client.get("/api/v1/tasks", headers=headers(token), params={"project_id": "unknown"}).status_code == 404
+
+
+def test_project_pinned_keys_created_earlier_keep_their_limits(client):
+    register(client)
+    pinned = mint(client, "project-aa")["token"]
+    assert [p["id"] for p in client.get("/api/v1/projects", headers=headers(pinned)).json()["projects"]] == ["project-aa"]
+    assert post_task(client, pinned, project="paperbenchx").status_code == 404
+    # Omission still resolves to the pinned project rather than failing.
+    assert post_task(client, pinned).json()["task"]["project_id"] == "project-aa"
+
+
+def test_delete_removes_the_task_with_its_files_reviews_and_rollouts(client, app):
+    owner = register(client)
+    token = mint(client, project=None)["token"]
+    task_id = post_task(client, token, project="project-aa").json()["task"]["id"]
+    assert post_rollout(client, task_id, token, project="project-aa").status_code == 200
+    client.post(f"/api/tasks/{task_id}/reviews?project_id=project-aa", json={"verdict": "changes_requested", "body": "Needs an edge case"})
+
+    detail = client.get(f"/api/v1/tasks/{task_id}", headers=headers(token), params={"project_id": "project-aa"})
+    assert detail.json()["can_delete"] is True
+    assert len(detail.json()["reviews"]) == 1
+
+    with TestClient(app) as other:
+        register(other, "member@example.com")
+        stranger = mint(other, project=None)["token"]
+        assert other.get(f"/api/v1/tasks/{task_id}", headers=headers(stranger), params={"project_id": "project-aa"}).json()["can_delete"] is False
+        assert other.delete(f"/api/v1/tasks/{task_id}", headers=headers(stranger), params={"project_id": "project-aa"}).status_code == 403
+
+    removed = client.delete(f"/api/v1/tasks/{task_id}", headers=headers(token), params={"project_id": "project-aa"})
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {"ok": True, "deleted": task_id}
+    assert client.get(f"/api/v1/tasks/{task_id}", headers=headers(token), params={"project_id": "project-aa"}).status_code == 404
+
+    with app.state.store.connect() as db:
+        for table in ("tasks", "files", "rollouts", "reviews", "activity"):
+            assert db.execute(f"SELECT COUNT(*) FROM {table} WHERE {'id' if table == 'tasks' else 'task_id'}=?", (task_id,)).fetchone()[0] == 0
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert list(app.state.store.blobs.iterdir()) == []
+    assert owner["role"] == "admin"
+
+
+def test_administrator_deletes_another_members_task(client, app):
+    register(client)
+    with TestClient(app) as member:
+        register(member, "member@example.com")
+        member_token = mint(member, project=None)["token"]
+        task_id = post_task(member, member_token, project="project-aa").json()["task"]["id"]
+    admin_token = mint(client, project=None)["token"]
+    assert client.get(f"/api/v1/tasks/{task_id}", headers=headers(admin_token), params={"project_id": "project-aa"}).json()["can_delete"] is True
+    assert client.delete(f"/api/v1/tasks/{task_id}", headers=headers(admin_token), params={"project_id": "project-aa"}).status_code == 200
+
+
+def test_reusing_an_idempotency_key_after_deletion_creates_a_new_task(client):
+    register(client)
+    token = mint(client, project=None)["token"]
+    first = post_task(client, token, "reused-key", project="project-aa")
+    assert first.status_code == 200
+    task_id = first.json()["task"]["id"]
+    assert client.delete(f"/api/v1/tasks/{task_id}", headers=headers(token), params={"project_id": "project-aa"}).status_code == 200
+
+    # Without clearing the cached response this would replay a task that is gone.
+    again = post_task(client, token, "reused-key", project="project-aa")
+    assert again.status_code == 200, again.text
+    assert again.json()["replayed"] is False
+    assert again.json()["task"]["id"] != task_id
+    assert client.get(f"/api/v1/tasks/{again.json()['task']['id']}", headers=headers(token), params={"project_id": "project-aa"}).status_code == 200
