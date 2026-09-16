@@ -7,7 +7,7 @@ import re
 
 from fastapi import HTTPException
 
-from .imports import is_task_material, parse_rollout, read_uploads, task_metadata, trial_groups, upload_title, validate_task_bundle
+from .imports import is_task_material, parse_rollout, read_uploads, task_bundle_prefix, task_metadata, trial_groups, upload_title
 from .storage import now, uid
 
 
@@ -36,7 +36,7 @@ class ArchiveManager:
         if tag_list is not None and (not isinstance(tag_list, list) or len(tag_list) > 20 or any(not isinstance(t, str) or len(t) > 50 for t in tag_list)):
             raise HTTPException(422, "最多支持 20 个标签，每个标签不超过 50 字符")
         imported = await read_uploads(files, paths)
-        prefix = validate_task_bundle(imported)
+        prefix = task_bundle_prefix(imported)
         metadata = task_metadata(imported)
         title = title.strip() or upload_title(files, paths) or metadata.get("title") or "未命名任务"
         return {"files": imported, "prefix": prefix, "fields": {

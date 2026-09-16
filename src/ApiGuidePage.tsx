@@ -294,7 +294,7 @@ curl --fail-with-body --show-error --get \\
         <div id={methodPanelId}>
           <CodeExample title={selectedId ? '准备客户端与任务集' : '准备并新建任务集'} code={method === 'python' ? pythonSetup : curlSetup} notify={notify} />
           <p className="api-guide-step">{method === 'python' ? '上传任务目录或 ZIP；名称取目录名或 ZIP 文件名。' : '上传任务 ZIP。目录上传建议使用 Python CLI。'}</p>
-          <p className="api-guide-note">每次上传一个任务根目录，含有效 UTF-8 TOML 格式的 <code>task.toml</code>，以及 <code>instruction.md</code> 或 <code>steps/**/instruction.md</code>。保留 environment、tests 等目录；ZIP 可带一层父目录，不能混装多个任务。</p>
+          <p className="api-guide-note">平台不校验包内格式：上传什么就按文件原样保存和展示，不必是标准 Harbor 任务。包含 <code>task.toml</code> 时会从中读取名称、分类、难度与标签；包含可识别的 <code>result.json</code> 时会把对应文件作为 Rollout 结果展示。ZIP 可带一层父目录，该目录会被去掉。路径安全、大小与数量限制仍然有效。</p>
           <CodeExample title="上传并获取任务链接" code={method === 'python' ? pythonUpload : curlUpload} notify={notify} />
           <p className="api-guide-result">命令最后输出 <code>task_url</code>，可直接分享给评审者。任务 ID 已保存为 <code>HARBOR_TASK_ID</code>，用于后续追加与查询。</p>
           <details className="api-guide-nested"><summary>标签：打标与筛选<ChevronDown size={16} /></summary><p>预设词表 {PRESET_TAGS.join(' · ')}，也接受任何自定义标签；每个任务最多 20 个，单个不超过 50 字符。省略标签参数时沿用任务包 <code>task.toml</code> 中声明的标签。</p><CodeExample title={method === 'python' ? '读取词表并按标签筛选' : '读取词表并按标签筛选（curl）'} code={method === 'python' ? tagPython : tagCurl} notify={notify} /><p className="api-guide-note">重复 <code>tag</code> 取交集：任务需同时带上全部标签才会返回。标签参与幂等指纹，同一个 <code>Idempotency-Key</code> 改变标签会返回 <code>409</code>。</p></details>

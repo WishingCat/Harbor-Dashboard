@@ -268,23 +268,16 @@ def task_metadata(files):
         return {}
 
 
-def validate_task_bundle(files):
+def task_bundle_prefix(files):
+    """Locate the task's own root, without requiring the upload to be a Harbor bundle.
+
+    An upload is stored and displayed as plain files whatever its shape, so nothing
+    here rejects a layout. A single unambiguous task.toml still anchors metadata and
+    rollout detection; anything else is read from the top of the upload.
+    """
     manifests = [p for p in files if PurePosixPath(p).name == "task.toml"]
-    if len(manifests) > 1:
-        raise HTTPException(400, "检测到多个 Harbor 任务，请分别上传每个任务目录")
-    if not manifests:
-        raise HTTPException(400, "Harbor 任务必须包含 task.toml 和 instruction.md（或 steps 下的 instruction.md）")
-    manifest = manifests[0]
-    prefix = manifest.rsplit("/", 1)[0] + "/" if "/" in manifest else ""
-    if prefix.count("/") > 1:
-        raise HTTPException(400, "请选择任务目录本身，task.toml 应位于根目录或单一父目录下")
-    instructions = prefix + "instruction.md" in files or any(
-        p.startswith(prefix + "steps/") and p.endswith("/instruction.md") for p in files
-    )
-    if not instructions:
-        raise HTTPException(400, "任务缺少 instruction.md；多步骤任务需在 steps 下提供 instruction.md")
-    try:
-        tomllib.loads(files[manifest].decode("utf-8-sig"))
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise HTTPException(400, "task.toml 不是有效的 UTF-8 TOML 配置") from exc
-    return prefix
+    if len(manifests) != 1:
+        return ""
+    prefix = manifests[0].rsplit("/", 1)[0] + "/" if "/" in manifests[0] else ""
+    # A manifest buried deeper than one directory says nothing about the root.
+    return prefix if prefix.count("/") <= 1 else ""

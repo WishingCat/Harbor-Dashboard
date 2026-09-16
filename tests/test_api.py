@@ -373,11 +373,40 @@ def test_root_trial_does_not_consume_task_material_under_parent_folder(client):
     {"task.toml": b'version="1.0"'},
     {"one/task.toml": b'version="1.0"', "one/instruction.md": b"one", "two/task.toml": b'version="1.0"', "two/instruction.md": b"two"},
     {"task.toml": b"not valid toml [", "instruction.md": b"task"},
+    {"notes.md": b"# Just some notes", "data.csv": b"a,b\n1,2\n"},
+    {"report.pdf": b"%PDF-1.4 not really a pdf"},
 ])
-def test_missing_invalid_and_multi_task_bundles_are_rejected(client, entries):
+def test_uploads_are_stored_whatever_their_layout(client, entries):
+    """The platform is a file archive, not a Harbor linter: an upload that is not a
+    standard bundle is still kept and shown as files."""
     register(client)
     response = upload_task(client, entries)
-    assert response.status_code == 400 and isinstance(response.json()["detail"], str)
+    assert response.status_code == 200, response.text
+    task_id = response.json()["task"]["id"]
+    stored = {file["path"] for file in client.get(f"/api/tasks/{task_id}").json()["files"]}
+    # Every uploaded path survives, apart from a single wrapper directory.
+    expected = {path.split("/", 1)[1] if len({p.split("/")[0] for p in entries}) == 1 and "/" in path else path
+                for path in entries}
+    assert stored == expected
+    assert client.delete(f"/api/tasks/{task_id}").status_code == 200
+
+
+def test_a_bundle_without_a_manifest_still_gets_usable_defaults(client):
+    register(client)
+    response = upload_task(client, {"readme.md": b"# Loose files", "extra/notes.txt": b"notes"},
+                           title="Loose upload")
+    assert response.status_code == 200, response.text
+    task = response.json()["task"]
+    assert task["title"] == "Loose upload"
+    assert task["category"] == "software-engineering" and task["difficulty"] == "hard"
+    assert task["tags"] == ["Python"]
+
+
+def test_unsafe_paths_are_still_rejected_after_relaxing_the_format(client):
+    """Dropping the layout rules must not drop the path checks."""
+    register(client)
+    for entries in ({"../escape.md": b"x"}, {"/etc/passwd": b"x"}, {"a/../../b.md": b"x"}):
+        assert upload_task(client, entries).status_code == 400
     assert client.get("/api/tasks").json()["tasks"] == []
 
 
