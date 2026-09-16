@@ -22,7 +22,7 @@ Agent 接入指南位于网站左侧底部的「API 接口」，也可访问 `/?
 需要 Node.js 22、Python 3.12 或更新版本。
 
 ```bash
-cp .env.example .env
+cp deploy/runtime.env .env
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 npm ci
@@ -54,11 +54,14 @@ npm run build
 ## Docker 运行
 
 ```bash
-cp .env.example .env
+git clone git@github.com:WishingCat/Harbor-Dashboard.git
+cd Harbor-Dashboard
 docker compose up --build -d
 ```
 
-访问 <http://localhost:8000>。镜像会先构建前端，再以非 root 用户启动后端。`harbor-data` 命名卷保存数据库与上传文件，重新构建镜像或重启容器后仍保留。
+访问 `http://服务器IP:8000`（本机为 <http://localhost:8000>）。首次启动会从仓库中的部署快照恢复 133 个账户、2 个项目、1 个任务集和 2 道任务，可直接使用原用户名和密码登录。后端会读取 `deploy/runtime.env` 中的翻译配置。需要自定义配置时，复制该文件为 `.env`，然后运行 `HARBOR_ENV_FILE=.env docker compose up --build -d`。
+
+镜像会先构建前端，再以非 root 用户启动后端。`harbor-data` 命名卷保存数据库与上传文件，重新构建镜像或重启容器后仍保留。
 
 ```bash
 docker compose logs -f
@@ -85,7 +88,7 @@ docker compose down
 .venv/bin/python -m server.provision_users --input output/accounts/unipat-users.csv --source unipat-ai --admin-username youradmin --apply
 ```
 
-将 `youradmin` 替换为 CSV 中需要设为管理员的用户名。初始密码与 CSV 中的用户名相同，后端只存储加盐哈希。重复导入同一来源、同一姓名会跳过已有账号，不重置密码；重复姓名、用户名或现存账号冲突会使整批导入失败。成员没有提供邮箱时，程序使用内部 `.invalid` 占位地址，不发送邮件。实际名单保存在被 Git 忽略的 `output/accounts/` 中，部署时通过数据库备份迁移账号。
+将 `youradmin` 替换为 CSV 中需要设为管理员的用户名。初始密码与 CSV 中的用户名相同，后端只存储加盐哈希。重复导入同一来源、同一姓名会跳过已有账号，不重置密码；重复姓名、用户名或现存账号冲突会使整批导入失败。成员没有提供邮箱时，程序使用内部 `.invalid` 占位地址，不发送邮件。原始导入名单保存在被 Git 忽略的 `output/accounts/` 中；本私有仓库通过 `deploy/bootstrap/` 数据库快照迁移账号，无需再次导入。密码以原有加盐哈希保存，登录密码不变。
 
 ### 项目数据
 
@@ -190,7 +193,7 @@ python3 scripts/harbor_upload.py status TASK_ID --json
 
 翻译由平台统一提供，登录用户可直接在文档中开启“双语阅读”，无需个人 API Key。设置页在托管模式下只显示服务摘要，管理员也不通过网页修改路由或密钥。
 
-实际网关地址、模型和密钥保存于服务器的 `.env`（已被 Git 和 Docker 构建上下文排除）。部署到另一台服务器时复制该文件或注入对应环境变量，并通过 `--env-file .env` 启动；Docker Compose 已配置读取 `.env`。
+本私有仓库的实际网关地址、模型和密钥保存在 `deploy/runtime.env`，Docker Compose 自动读取。该文件已排除于 Docker 构建上下文，密钥只注入后端进程。自定义服务器配置可以复制为 `.env` 并通过 `HARBOR_ENV_FILE=.env` 选择；非 Docker 启动使用 `--env-file deploy/runtime.env`。
 
 ```dotenv
 TRANSLATION_MANAGED=true
@@ -204,7 +207,7 @@ TRANSLATION_TRUST_ENV=false
 
 服务端向 Base URL 的 `/chat/completions` 发起流式请求，携带 `thinking: {"type": "disabled"}`。服务器环境变量可以指定 HTTP 或 HTTPS 网关；网页配置接口仍保留 HTTPS 限制。`TRANSLATION_TRUST_ENV=false` 使网关请求直连，设为 `true` 时使用服务器的 HTTP(S)/SOCKS 代理环境配置。
 
-托管模式只读取服务器环境配置，数据库中的旧提供商配置不会覆盖它。API Key 不返回给浏览器，也不打包进前端或镜像；修改 `.env` 后重启后端生效。文档文本通过后端发送到该网关，译文流式返回页面。
+托管模式只读取服务器环境配置，数据库中的旧提供商配置不会覆盖它。API Key 不返回给浏览器，也不打包进前端或镜像；修改部署环境文件后，执行 `docker compose up -d --force-recreate` 重新加载；非 Docker 部署重启后端生效。文档文本通过后端发送到该网关，译文流式返回页面。
 
 如需恢复旧版的管理员网页配置，可设置 `TRANSLATION_MANAGED=false`。该模式支持在设置页配置服务端 API Key；切换 API 地址必须填写新密钥。
 
@@ -213,6 +216,7 @@ TRANSLATION_TRUST_ENV=false
 | 配置项 | 默认值或用途 |
 | --- | --- |
 | `HARBOR_DATA_DIR` | 本地为 `./data`；Docker 中为 `/app/data` |
+| `HARBOR_BOOTSTRAP_DIR` | 首次启动的数据快照目录；已有数据库时跳过恢复 |
 | `HARBOR_SEED_DEMO` | 是否初始化 ProjectAA 的两道临时任务，默认 `true` |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
 | `TRANSLATION_API_KEY` | 平台统一翻译密钥，仅服务端使用 |
@@ -225,9 +229,11 @@ TRANSLATION_TRUST_ENV=false
 | `HARBOR_PUBLIC_URL` | 可选的平台对外基础地址，用于生成 API 返回的质检链接 |
 | `COOKIE_SECURE` | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true` |
 
-数据库文件为数据目录中的 `harbor.sqlite3`。备份时停止服务后复制**整个数据目录**，同时保存数据库与上传文件；恢复时将完整备份放回相同数据目录。不要将 `.env`、数据目录或实际 API 密钥提交到 Git。
+数据库文件为数据目录中的 `harbor.sqlite3`。备份时停止服务后复制**整个数据目录**，同时保存数据库与上传文件；恢复时将完整备份放回相同数据目录。本私有仓库按部署要求跟踪 `deploy/bootstrap/`（用户密码哈希、任务与文件）和 `deploy/runtime.env`（后端配置及翻译密钥）。运行时的 `data/`、个人 `.env`、日志和缓存仍不跟踪。仓库及含账户快照的镜像应保持私有。
 
-公开部署时，在 FastAPI 前使用提供 HTTPS 的反向代理，将 `COOKIE_SECURE=true`，并完成管理员注册。代理将网站请求转发到容器的 `8000` 端口，保留浏览器请求的 `Host` 头，并为翻译请求关闭响应缓冲，以便及时显示译文。`/api/health` 可用于健康检查，Docker 镜像已配置该检查。SQLite 与本地文件存储适合单实例部署；多实例共享、对象存储、邮件找回密码和企业 SSO 需要后续扩展。
+快照仅用于**空数据卷的首次初始化**。已有数据库时完全跳过恢复，因此重新部署不会重置密码或覆盖后续上传。原站的浏览器登录会话未迁移，用户需要在新站重新登录。仓库快照不是运行时自动备份；后续数据仍需备份完整数据目录。更新快照时，先停止服务，再运行 `python -m server.deployment --source data --destination deploy/bootstrap-next`，核对后替换 `deploy/bootstrap/` 并提交。
+
+公开部署时，在 FastAPI 前使用提供 HTTPS 的反向代理，将 `COOKIE_SECURE=true`，现有管理员账号随快照保留。代理将网站请求转发到容器的 `8000` 端口，保留浏览器请求的 `Host` 头，并为翻译请求关闭响应缓冲，以便及时显示译文。`/api/health` 可用于健康检查，Docker 镜像已配置该检查。SQLite 与本地文件存储适合单实例部署；多实例共享、对象存储、邮件找回密码和企业 SSO 需要后续扩展。
 
 ## 项目结构
 
@@ -235,6 +241,7 @@ TRANSLATION_TRUST_ENV=false
 src/                 React 前端
 server/              FastAPI API、导入与数据存储
 scripts/             Agent 上传客户端
+deploy/              私有部署快照与后端运行配置
 docs/                API 使用说明
 data/                本地数据库与上传文件（运行时生成）
 dist/                前端生产构建（构建时生成）

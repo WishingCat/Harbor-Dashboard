@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cat > /app/text_stats.py <<'PYTHON'
+import argparse
+import json
+from pathlib import Path
+
+def count_text(text):
+    return {
+        "lines": len(text.splitlines()),
+        "words": len(text.split()),
+        "characters": len(text),
+    }
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", type=Path)
+    args = parser.parse_args()
+    with args.input.open(encoding="utf-8", newline="") as handle:
+        text = handle.read()
+    print(json.dumps(count_text(text), ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()
+PYTHON

@@ -1,0 +1,25 @@
+# 修复文本统计脚本
+
+> ProjectAA 临时任务。尚无 agent rollout 或评测结果。
+
+`/app/text_stats.py` 的 `count_text(text)` 统计结果不正确。
+修复该函数，保留命令行入口，不添加第三方依赖。
+
+## 统计规则
+
+- `lines`：按 Python `str.splitlines()` 的行边界计数；空文件为 0，末尾换行不额外增加一行。
+- `words`：按连续空白字符分隔；空格、制表符和换行均可分隔词。
+- `characters`：Unicode 字符数，包含所有空白字符；CRLF 按两个字符计数。
+
+`python /app/text_stats.py input.txt` 应读取 UTF-8 文件，并在标准输出写入包含这三个整数的 JSON 对象。
+输入文件不存在时应以非零状态退出。
+
+## 示例
+
+输入 `alpha  beta\n`（末尾一个换行）：
+
+```json
+{"lines": 1, "words": 2, "characters": 12}
+```
+
+验证覆盖空文件、重复空白、中文字符、CRLF 与命令行输入。

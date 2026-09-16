@@ -10,7 +10,8 @@ RUN npm run build
 FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HARBOR_DATA_DIR=/app/data
+    HARBOR_DATA_DIR=/app/data \
+    HARBOR_BOOTSTRAP_DIR=/app/deploy/bootstrap
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
@@ -19,6 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && mkdir -p /app/data \
     && chown harbor:harbor /app/data
 COPY server ./server
+COPY --chown=harbor:harbor deploy/bootstrap ./deploy/bootstrap
 COPY scripts/harbor_upload.py ./scripts/harbor_upload.py
 COPY --from=frontend /build/dist ./dist
 USER harbor

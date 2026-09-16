@@ -1,6 +1,7 @@
 .git
 .env
 .env.*
+deploy/runtime.env
 !.env.example
 .venv
 venv

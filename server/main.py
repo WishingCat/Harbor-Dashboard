@@ -93,10 +93,15 @@ def public_user(row):
     return {key: row[key] for key in ("id", "name", "email", "role", "username")}
 
 
-def create_app(data_dir=None, seed: bool | None = None):
+def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
     app = FastAPI(title="Harbor Dashboard", version="1.0.0")
     app.add_middleware(RequestBodyLimit)
-    store = Store(data_dir or os.getenv("HARBOR_DATA_DIR", ROOT / "data"))
+    directory = data_dir or os.getenv("HARBOR_DATA_DIR", ROOT / "data")
+    snapshot = bootstrap_dir or (os.getenv("HARBOR_BOOTSTRAP_DIR") if data_dir is None else None)
+    if snapshot:
+        from .deployment import initialize_data
+        initialize_data(directory, snapshot)
+    store = Store(directory)
     archives = ArchiveManager(store)
     app.state.store = store
     # Tests can supply an httpx transport without contacting an external provider.
