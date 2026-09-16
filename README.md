@@ -2,18 +2,20 @@
 
 用于上传、阅读和评审 Harbor 任务与 rollout 产物的协作平台。任务说明、运行轨迹、验证结果和文件保存在同一处；登录用户可以提出修改意见，并独立评价任务是否合格。
 
-Agent 接入指南位于网站左侧底部的「API 接口」，也可访问 `/?project=PROJECT_ID&view=api`。该页面提供调用说明和示例；项目 Token 通过 HTTP 获取，详见 [Agent API 文档](docs/AGENT_API.md)。
+Agent 接入指南位于网站左侧底部的「API 接口」，也可访问 `/?project=PROJECT_ID&view=api`。该页面顶部可直接生成 API Key，并包含 Agent 接入所需的全部接口说明与示例；文本版见 [Agent API 文档](docs/AGENT_API.md)。
 
 ## 功能
 
 - 项目任务库：按「项目 → 任务集 → Harbor 任务」组织内容，所有登录用户均可新建项目与任务集。
 - 文件导入：上传单个 ZIP 或任务目录，任务名称自动采用 ZIP 文件名或目录名，简介可选。
 - 产物阅读：桌面任务库常驻项目导航，进入任务后切换为常驻文件目录；手机使用抽屉切换文件。上传包包含 Rollout 结果时展示已有轨迹、验证结果和产物，没有结果时只展示任务内容。
+- 任务标签：上传时从物理、化学、生物、医学、人工智能、具身智能、编程中选择，也可自定义；任务库可按标签筛选。
 - 协作评审：注册、登录、发表评论，提交合格或需修改评价。
+- 删除任务：任务作者或管理员可在任务页删除自己上传的任务，网页与 API 均可操作。
 - 实时翻译：通过服务端接入 DeepSeek 或兼容 OpenAI Chat Completions 的 API，流式显示译文。
 - 管理设置：平台统一提供翻译服务，无需用户配置密钥。
-- Agent API：使用项目 Token 上传本地任务及已有产物，返回质检链接；支持重试去重与查询评审状态。
-- 暗黑模式：右上角切换浅色与深色，记住本机选择；首次使用跟随系统主题。
+- Agent API：在「API 接口」页面生成 API Key，上传本地任务及已有产物，返回质检链接；支持标签、重试去重、按标签查询与删除任务。一把 Key 适用于账号可访问的全部项目，每次调用指定 `project_id`。
+- 暗黑模式：右上角切换浅色与深色，记住本机选择；默认使用浅色。
 
 后端使用 FastAPI 和 SQLite，前端使用 React、TypeScript、Vite。上传的脚本和容器配置作为文件保存，平台不会执行 Harbor 任务。生产环境由 FastAPI 同时提供 API 和构建后的前端。
 
@@ -59,7 +61,7 @@ cd Harbor-Dashboard
 docker compose up --build -d
 ```
 
-访问 `http://服务器IP:8000`（本机为 <http://localhost:8000>）。首次启动会从仓库中的部署快照恢复 133 个账户、2 个项目、1 个任务集和 2 道任务，可直接使用原用户名和密码登录。后端会读取 `deploy/runtime.env` 中的翻译配置。需要自定义配置时，复制该文件为 `.env`，然后运行 `HARBOR_ENV_FILE=.env docker compose up --build -d`。
+访问 `http://服务器IP:10323`（本机为 <http://localhost:10323>）。`compose.yaml` 将容器的 8000 端口发布到主机的 10323 端口，改端口只需修改该映射。首次启动会从仓库中的部署快照恢复 133 个账户、2 个项目和 1 个任务集，可直接使用原用户名和密码登录；快照不含任务，任务库从空开始。后端会读取 `deploy/runtime.env` 中的翻译配置。需要自定义配置时，复制该文件为 `.env`，然后运行 `HARBOR_ENV_FILE=.env docker compose up --build -d`。
 
 镜像会先构建前端，再以非 root 用户启动后端。`harbor-data` 命名卷保存数据库与上传文件，重新构建镜像或重启容器后仍保留。
 
@@ -96,14 +98,14 @@ docker compose down
 
 | 项目 | 初始任务 |
 | --- | --- |
-| ProjectAA | 默认任务集中有两道临时任务 |
+| ProjectAA | 空，含「默认任务集」 |
 | PaperBenchX | 空 |
 
 侧栏选择项目后，任务库先展示该项目的任务集，进入任务集后上传、搜索和评审 Harbor 任务。新建项目和任务集只需填写名称；每个任务集可持续上传多个任务。上传弹窗显示目标项目与任务集，分享链接携带两级归属；Rollout 和评审归属于对应任务。项目与任务集沿用公开阅读、登录后创建和操作的权限，翻译服务由平台统一提供。
 
 升级时，已有任务迁入所属项目的「默认任务集」，空项目保持空；旧任务链接仍可访问。Agent 上传可指定 `--task-set SET_ID`，旧 API 调用省略任务集时自动归入默认任务集。详细调用见 [Agent API 文档](docs/AGENT_API.md)。
 
-默认初始化两个临时任务，文件采用 Harbor 目录格式，不生成虚构的运行记录或评审。首次启动前设置 `HARBOR_SEED_DEMO=false` 可保留两个空项目。初始化是幂等的，重启不会重复添加。升级时，原无项目任务归入 ProjectAA；旧的系统演示数据会替换为这两个临时任务，用户创建或已经参与评审的内容保留。
+全新数据库默认初始化两道临时任务，文件采用 Harbor 目录格式，不生成虚构的运行记录或评审；首次启动前设置 `HARBOR_SEED_DEMO=false` 可跳过。本仓库的部署快照已标记初始化完成且不含任务，因此从快照恢复的部署不会再生成它们。初始化是幂等的，重启不会重复添加。升级时，原无项目任务归入 ProjectAA；旧的系统演示数据会替换为这两个临时任务，用户创建或已经参与评审的内容保留。
 
 ## 上传 Harbor 任务
 
@@ -129,7 +131,7 @@ my-task/
 zip -r my-task.zip my-task
 ```
 
-推荐将完整任务上传，便于评审者同时阅读说明、验证脚本与参考解。Windows 任务使用 `test.bat` / `solve.bat`。[多步骤任务](https://www.harborframework.com/docs/tasks/multi-step)将说明放在 `steps/<step-name>/instruction.md`，上传时应保留整个 `steps/` 目录。
+推荐将完整任务上传，便于评审者同时阅读说明、验证脚本与参考解。上传弹窗可以选择标签（物理、化学、生物、医学、人工智能、具身智能、编程，也可自定义），不选则沿用任务包 `task.toml` 中 `[metadata] tags` 声明的标签；任务库按标签筛选。Windows 任务使用 `test.bat` / `solve.bat`。[多步骤任务](https://www.harborframework.com/docs/tasks/multi-step)将说明放在 `steps/<step-name>/instruction.md`，上传时应保留整个 `steps/` 目录。
 
 ### 随任务导入已有 Rollout 结果
 
@@ -165,29 +167,38 @@ jobs/my-job/
 
 ## Agent 上传 API
 
-网站左侧底部的「API 接口」页面提供接入示例，地址为 `/?project=PROJECT_ID&view=api`。API 与网页运行在同一个服务中。使用登录会话调用 `POST /api/auth/tokens` 获取绑定项目的 Token，具体步骤见 [获取项目 Token](docs/AGENT_API.md#1-获取项目-token)。然后配置 Agent 的平台地址和 Token：
+网站左侧底部的「API 接口」页面提供接入示例，地址为 `/?project=PROJECT_ID&view=api`。API 与网页运行在同一个服务中。在该页面顶部的「生成 API Key」区域即可生成、查看和撤销 Key，明文只显示一次；没有浏览器时的 HTTP 流程见 [获取 API Key](docs/AGENT_API.md#1-获取-api-key)。
+
+一把 Key 适用于账号可访问的全部项目，因此每次调用都要指定目标项目，省略会返回 `422` 并列出可用项目。配置 Agent 的平台地址、Key 与目标项目：
 
 ```bash
-export HARBOR_API_URL='http://localhost:5173'
-export HARBOR_API_TOKEN='hbr_替换为你的项目Token'
+export HARBOR_API_URL='http://localhost:10323'
+export HARBOR_API_TOKEN='hbr_替换为你生成的APIKey'
+export HARBOR_PROJECT_ID='project-aa'
 
 python3 scripts/harbor_upload.py task /path/to/my-task \
+  --project "$HARBOR_PROJECT_ID" \
+  --tag 物理 --tag 人工智能 \
   --rollout /path/to/existing-trial
 ```
 
 也可以直接上传 ZIP、追加已有结果，或读取人工质检状态：
 
 ```bash
-python3 scripts/harbor_upload.py task /path/to/my-task.zip
-python3 scripts/harbor_upload.py rollout TASK_ID /path/to/existing-job
-python3 scripts/harbor_upload.py status TASK_ID --json
+python3 scripts/harbor_upload.py projects
+python3 scripts/harbor_upload.py task /path/to/my-task.zip --project "$HARBOR_PROJECT_ID"
+python3 scripts/harbor_upload.py rollout TASK_ID /path/to/existing-job --project "$HARBOR_PROJECT_ID"
+python3 scripts/harbor_upload.py status TASK_ID --project "$HARBOR_PROJECT_ID" --json
+python3 scripts/harbor_upload.py tags --project "$HARBOR_PROJECT_ID"
+python3 scripts/harbor_upload.py tasks --project "$HARBOR_PROJECT_ID" --tag 物理
+python3 scripts/harbor_upload.py delete TASK_ID --project "$HARBOR_PROJECT_ID"
 ```
 
 上传输出包含质检页面链接，加 `--json` 可读取 `task_url` 字段，直接分享给评审者。客户端无需第三方依赖；两个上传接口均支持重试去重。部署后可从平台 `/api/agent-client.py` 下载客户端。
 
-接口为 `/api/v1/tasks`、`/api/v1/tasks/{task_id}` 和 `/api/v1/tasks/{task_id}/rollouts`，通过 `Authorization: Bearer TOKEN` 认证。交互式文档在 `/docs`，OpenAPI 定义在 `/openapi.json`。完整参数、curl 示例、权限与错误处理见 [Agent API 使用说明](docs/AGENT_API.md)。
+接口包括 `/api/v1/projects`、`/api/v1/task-sets`、`/api/v1/tags`、`/api/v1/tasks`、`/api/v1/tasks/{task_id}`（GET 与 DELETE）和 `/api/v1/tasks/{task_id}/rollouts`，通过 `Authorization: Bearer KEY` 认证。交互式文档在 `/docs`，OpenAPI 定义在 `/openapi.json`。完整参数、curl 示例、权限与错误处理见站内「API 接口」页面或 [Agent API 使用说明](docs/AGENT_API.md)。
 
-当前保留本地运行。之后部署到服务器时，将 `HARBOR_API_URL` 改为服务器地址，并配置 `HARBOR_PUBLIC_URL` 生成对外质检链接。
+部署到服务器后，将 `HARBOR_API_URL` 改为服务器地址；需要对外分发质检链接时配置 `HARBOR_PUBLIC_URL`，留空则使用请求自身的地址。
 
 ## 平台统一翻译
 
@@ -217,7 +228,7 @@ TRANSLATION_TRUST_ENV=false
 | --- | --- |
 | `HARBOR_DATA_DIR` | 本地为 `./data`；Docker 中为 `/app/data` |
 | `HARBOR_BOOTSTRAP_DIR` | 首次启动的数据快照目录；已有数据库时跳过恢复 |
-| `HARBOR_SEED_DEMO` | 是否初始化 ProjectAA 的两道临时任务，默认 `true` |
+| `HARBOR_SEED_DEMO` | 全新数据库是否初始化 ProjectAA 的两道临时任务，默认 `true`；从部署快照恢复时不生效 |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
 | `TRANSLATION_API_KEY` | 平台统一翻译密钥，仅服务端使用 |
 | `TRANSLATION_MANAGED` | 示例配置为 `true`；禁止网页修改平台服务 |
