@@ -2,7 +2,7 @@ services:
   harbor-dashboard:
     build: .
     ports:
-      - "8000:8000"
+      - "10323:8000"
     env_file:
       - ${HARBOR_ENV_FILE:-./deploy/runtime.env}
     environment:

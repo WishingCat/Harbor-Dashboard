@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, Copy, Download, ExternalLink } from 'lucide-react';
 import type { Project, TaskSet } from './types';
+import { PRESET_TAGS } from './tags';
 import './api-guide.css';
 
 // Values shown in examples remain shell data, including quotes in imported IDs.
@@ -42,13 +43,14 @@ const endpoints = [
   ['GET', '/api/v1/projects', 'Token 所属项目'],
   ['GET', '/api/v1/task-sets', '列出任务集'],
   ['POST', '/api/v1/task-sets', '新建任务集'],
-  ['GET', '/api/v1/tasks', '列出任务，可按任务集筛选'],
+  ['GET', '/api/v1/tags', '预设标签词表与已用标签'],
+  ['GET', '/api/v1/tasks', '列出任务，可按任务集与标签筛选'],
   ['POST', '/api/v1/tasks', '上传任务及包内已有结果'],
   ['GET', '/api/v1/tasks/{task_id}', '任务、文件、结果与评审'],
   ['POST', '/api/v1/tasks/{task_id}/rollouts', '追加已有产物'],
 ];
 
-export default function ApiGuidePage({project, taskSets, notify}: {project: Project; taskSets: TaskSet[]; notify: (message: string) => void}) {
+export default function ApiGuidePage({project, projects, taskSets, onProjectChange, notify}: {project: Project; projects: Project[]; taskSets: TaskSet[]; onProjectChange: (projectId: string) => void; notify: (message: string) => void}) {
   const [method, setMethod] = useState<'python' | 'curl'>('python');
   const [choice, setChoice] = useState({projectId: project.id, taskSetId: taskSets.find(item => item.project_id === project.id)?.id || ''});
   const sets = taskSets.filter(item => item.project_id === project.id);
@@ -112,6 +114,7 @@ python3 -c 'import json; print(json.load(open("harbor-task.json"))["task_url"])'
 ${uploadGuard} &&
 python3 harbor_upload.py task '/path/to/my-task' \\
   --project "$HARBOR_PROJECT_ID" --task-set "$HARBOR_TASK_SET_ID" \\
+  --tag ${shellQuote(PRESET_TAGS[0])} --tag ${shellQuote(PRESET_TAGS[4])} \\
   --json > harbor-task.json &&
 ${readUpload}`;
   const curlUpload = `unset HARBOR_TASK_ID
@@ -123,6 +126,7 @@ curl --fail-with-body --show-error \\
   -H "Idempotency-Key: $HARBOR_UPLOAD_KEY" \\
   --form-string "project_id=$HARBOR_PROJECT_ID" \\
   --form-string "task_set_id=$HARBOR_TASK_SET_ID" \\
+  --form-string ${shellQuote('tags=' + JSON.stringify([PRESET_TAGS[0], PRESET_TAGS[4]]))} \\
   -F 'files=@/path/to/my-task.zip' -o harbor-task.json &&
 ${readUpload}`;
   const pythonWithRollout = `unset HARBOR_TASK_ID
@@ -132,6 +136,21 @@ python3 harbor_upload.py task '/path/to/my-task' \\
   --rollout '/path/to/existing-trial' \\
   --json > harbor-task.json &&
 ${readUpload}`;
+  const tagPython = `${uploadGuard} &&
+python3 harbor_upload.py tags --project "$HARBOR_PROJECT_ID" &&
+python3 harbor_upload.py tasks --project "$HARBOR_PROJECT_ID" \\
+  --task-set "$HARBOR_TASK_SET_ID" --tag ${shellQuote(PRESET_TAGS[0])}`;
+  const tagCurl = `${uploadGuard} &&
+curl --fail-with-body --show-error --get \\
+  "$HARBOR_API_URL/api/v1/tags" \\
+  -H "Authorization: Bearer $HARBOR_API_TOKEN" \\
+  --data-urlencode "project_id=$HARBOR_PROJECT_ID" &&
+curl --fail-with-body --show-error --get \\
+  "$HARBOR_API_URL/api/v1/tasks" \\
+  -H "Authorization: Bearer $HARBOR_API_TOKEN" \\
+  --data-urlencode "project_id=$HARBOR_PROJECT_ID" \\
+  --data-urlencode "task_set_id=$HARBOR_TASK_SET_ID" \\
+  --data-urlencode ${shellQuote('tag=' + PRESET_TAGS[0])}`;
   const pythonFollowup = `${followupGuard} &&
 python3 harbor_upload.py rollout "$HARBOR_TASK_ID" '/path/to/job-results' \\
   --project "$HARBOR_PROJECT_ID" --task-set "$HARBOR_TASK_SET_ID"
@@ -159,14 +178,14 @@ curl --fail-with-body --show-error --get \\
   return <div className="page-content api-guide-page">
     <div className="page-heading"><h1>API 接口</h1></div>
     <div className="api-guide-content">
-      <p className="api-guide-intro">上传 Harbor 任务与已有产物，获取团队质检结果。平台保存文件，不执行 Rollout。</p>
+      <p className="api-guide-intro">上传 Harbor 任务与已有产物，获取团队质检结果。平台保存文件，不执行 Rollout。先选择目标项目，下方 Token 与示例都会随之更新。</p>
       <div className="api-guide-links"><a href="/api/agent-client.py" download="harbor_upload.py"><Download size={15} />下载 Python 客户端</a><a href="/docs" target="_blank" rel="noreferrer">API 文档<ExternalLink size={14} /></a><a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI<ExternalLink size={14} /></a></div>
-      <div className="api-guide-context"><span>当前项目 <strong>{project.name}</strong></span><code>{origin}</code></div>
+      <div className="api-guide-context"><label className="api-guide-project">目标项目<select value={project.id} onChange={event => onProjectChange(event.target.value)}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><code>{origin}</code></div>
       <p className="api-guide-note">基础地址不含 /api。远程 Agent 请将示例地址换为可访问的平台 HTTPS 地址；localhost 仅指运行命令的机器。</p>
 
       <details className="api-guide-disclosure api-guide-auth">
         <summary><span>1. 获取项目 Token</span><span className="api-guide-summary-note">首次使用</span><ChevronDown size={17} /></summary>
-        <div className="api-guide-disclosure-body"><p>使用平台账号登录。下面的命令通过登录 Cookie 创建当前项目的 30 天 Token，并读入 <code>HARBOR_API_TOKEN</code>；账号与密码输入不会回显。</p><CodeExample title="登录并创建项目 Token" code={authentication} notify={notify} /><p className="api-guide-note">Token 明文仅创建时返回，请保存到 Agent 的凭证配置。它只用于所属项目的任务集、任务与产物 API；后续请求使用 Bearer Token，不能用它创建其他 Token。</p></div>
+        <div className="api-guide-disclosure-body"><p>使用平台账号登录。下面的命令通过登录 Cookie 创建所选项目的 30 天 Token，并读入 <code>HARBOR_API_TOKEN</code>；账号与密码输入不会回显。</p><CodeExample title="登录并创建项目 Token" code={authentication} notify={notify} /><p className="api-guide-note">Token 明文仅创建时返回，请保存到 Agent 的凭证配置。它只用于所属项目的任务集、任务与产物 API；后续请求使用 Bearer Token，不能用它创建其他 Token。</p></div>
       </details>
 
       <section className="api-guide-quickstart" aria-labelledby="api-guide-start">
@@ -180,6 +199,7 @@ curl --fail-with-body --show-error --get \\
           <p className="api-guide-note">每次上传一个任务根目录，含有效 UTF-8 TOML 格式的 <code>task.toml</code>，以及 <code>instruction.md</code> 或 <code>steps/**/instruction.md</code>。保留 environment、tests 等目录；ZIP 可带一层父目录，不能混装多个任务。</p>
           <CodeExample title="上传并获取任务链接" code={method === 'python' ? pythonUpload : curlUpload} notify={notify} />
           <p className="api-guide-result">命令最后输出 <code>task_url</code>，可直接分享给评审者。任务 ID 已保存为 <code>HARBOR_TASK_ID</code>，用于后续追加与查询。</p>
+          <details className="api-guide-nested"><summary>标签：打标与筛选<ChevronDown size={16} /></summary><p>预设词表 {PRESET_TAGS.join(' · ')}，也接受任何自定义标签；每个任务最多 20 个，单个不超过 50 字符。省略标签参数时沿用任务包 <code>task.toml</code> 中声明的标签。</p><CodeExample title={method === 'python' ? '读取词表并按标签筛选' : '读取词表并按标签筛选（curl）'} code={method === 'python' ? tagPython : tagCurl} notify={notify} /><p className="api-guide-note">重复 <code>tag</code> 取交集：任务需同时带上全部标签才会返回。标签参与幂等指纹，同一个 <code>Idempotency-Key</code> 改变标签会返回 <code>409</code>。</p></details>
           {method === 'python' ? <details className="api-guide-nested"><summary>上传时附带已有 Rollout<ChevronDown size={16} /></summary><p>用下面的命令替代上方上传步骤。<code>--rollout</code> 可重复指定已有 trial 或 job 目录，不会触发运行。</p><CodeExample title="任务与已有 Rollout 一起上传" code={pythonWithRollout} notify={notify} /></details> : <p className="api-guide-note">ZIP 内包含可识别的 trial 时会一并导入；也可上传任务后追加结果 ZIP。每次新上传使用新标识，重试保持 <code>HARBOR_UPLOAD_KEY</code> 不变。</p>}
         </div>
       </section>

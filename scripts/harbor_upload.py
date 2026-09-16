@@ -332,6 +332,9 @@ def parser():
     task = commands.add_parser("task", parents=[common], help="Upload a Harbor task directory or ZIP")
     task.add_argument("path")
     task.add_argument("--description", default=None)
+    task.add_argument("--tag", action="append", default=None, metavar="TAG",
+                      help="Subject tag; may be repeated. Presets: 物理 化学 生物 医学 人工智能 具身智能 编程. "
+                           "Any other tag is accepted. Omit to keep the tags declared in task.toml")
     task.add_argument("--rollout", action="append", default=[], metavar="PATH", help="Include existing trial/job files; may be repeated")
     rollout = commands.add_parser("rollout", parents=[common], help="Append trial/job files to an existing task")
     rollout.add_argument("task_id")
@@ -339,6 +342,10 @@ def parser():
     status = commands.add_parser("status", parents=[common], help="Read review status, task URL and rollout information")
     status.add_argument("task_id")
     commands.add_parser("task-sets", parents=[common], help="List task sets in the token's project")
+    tasks = commands.add_parser("tasks", parents=[common], help="List tasks, optionally narrowed by tag")
+    tasks.add_argument("--tag", action="append", default=None, metavar="TAG",
+                       help="Only list tasks carrying this tag; repeat to require every tag given")
+    commands.add_parser("tags", parents=[common], help="List the preset tag vocabulary and the tags already in use")
     create_task_set = commands.add_parser("create-task-set", parents=[common], help="Create a task set; this request is never automatically retried")
     create_task_set.add_argument("name", metavar="NAME")
     for command in (task, rollout):
@@ -361,6 +368,21 @@ def scrub(value, secrets):
     return value
 
 
+def clean_tags(values):
+    """Trim, drop blanks and duplicates, and apply the server's own limits early."""
+    cleaned = []
+    for value in values:
+        tag = value.strip()
+        if not tag or tag in cleaned:
+            continue
+        if len(tag) > 50:
+            raise CLIError("Each --tag must be 50 characters or fewer", code="arguments")
+        cleaned.append(tag)
+    if len(cleaned) > 20:
+        raise CLIError("At most 20 tags are supported", code="arguments")
+    return cleaned
+
+
 def display(result):
     task_set = result.get("task_set")
     if task_set:
@@ -373,9 +395,22 @@ def display(result):
             print(str(item["id"]) + "\t" + str(item.get("name", ""))
                   + "\tTasks: " + str(item.get("tasks_count", 0))
                   + "\tRollouts: " + str(item.get("rollouts_count", 0)))
+    if "preset" in result and "in_use" in result:
+        print("Preset tags: " + " ".join(str(tag) for tag in result["preset"]))
+        print("Tags in use: " + str(len(result["in_use"])))
+        for item in result["in_use"]:
+            print(str(item.get("tag", "")) + "\tTasks: " + str(item.get("count", 0)))
+    if "tasks" in result:
+        print("Tasks: " + str(len(result["tasks"])))
+        for item in result["tasks"]:
+            print(str(item.get("id", "")) + "\t" + str(item.get("title", ""))
+                  + "\tStatus: " + str(item.get("status", ""))
+                  + "\tTags: " + (",".join(str(tag) for tag in item.get("tags", [])) or "-"))
     task = result.get("task", {})
     if task:
         print("Task: " + str(task.get("title", task.get("id", ""))))
+        if task.get("tags"):
+            print("Tags: " + ",".join(str(tag) for tag in task["tags"]))
         print("Task ID: " + str(task.get("id", "")))
         if task.get("task_set_id"):
             print("Task set: " + str(task.get("task_set_name", task["task_set_id"])))
@@ -409,12 +444,16 @@ def main(argv=None):
         project = getattr(args, "project", None)
         fields = {"project_id": project} if project else {}
         task_set = getattr(args, "task_set", os.environ.get("HARBOR_TASK_SET_ID", "")).strip()
-        if task_set and args.command in {"task", "rollout", "status"}:
+        if task_set and args.command in {"task", "rollout", "status", "tasks", "tags"}:
             fields["task_set_id"] = task_set
-        if args.command == "task-sets":
-            endpoint = "/api/v1/task-sets"
-            if fields:
-                endpoint += "?" + parse.urlencode(fields)
+        if args.command in {"task-sets", "tasks", "tags"}:
+            endpoint = {"task-sets": "/api/v1/task-sets", "tasks": "/api/v1/tasks", "tags": "/api/v1/tags"}[args.command]
+            query = list(fields.items())
+            if args.command == "tasks":
+                # Repeating tag narrows the list; the server requires every tag given.
+                query += [("tag", tag) for tag in clean_tags(getattr(args, "tag", None) or [])]
+            if query:
+                endpoint += "?" + parse.urlencode(query)
             result = client.send("GET", endpoint)
         elif args.command == "create-task-set":
             name = args.name.strip()
@@ -433,6 +472,9 @@ def main(argv=None):
                 filename, entries = prepare_task(args.path, args.rollout)
                 if args.description is not None:
                     fields["description"] = args.description
+                if args.tag is not None:
+                    # An explicit empty list clears the task.toml tags on purpose.
+                    fields["tags"] = json.dumps(clean_tags(args.tag), ensure_ascii=False)
             else:
                 endpoint = "/api/v1/tasks/" + parse.quote(args.task_id, safe="") + "/rollouts"
                 filename, entries = source_name(args.path) + ".zip", strip_wrapper(read_source(args.path))

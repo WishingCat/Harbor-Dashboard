@@ -466,3 +466,9 @@ input:focus, select:focus, textarea:focus, .key-input:focus-within,
   .managed-translation .connection-status { width: auto; margin: 0 0 0 auto; }
   .managed-access > button { margin-left: 0; }
 }
+
+/* Library rows: mark the tag being filtered on, and count the ones not shown.
+   Subline tags render borderless here, so the active state is weight and colour. */
+.task-subline .tag-active { color: var(--accent); font-weight: 600; }
+.task-subline .tag-more { color: var(--muted); }
+.filter-actions .tag-select { max-width: 190px; }

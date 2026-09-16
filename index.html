@@ -8,7 +8,7 @@
       (() => {
         let saved;
         try { saved = localStorage.getItem('harbor-theme'); } catch {}
-        const theme = saved === 'light' || saved === 'dark' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        const theme = saved === 'light' || saved === 'dark' ? saved : 'light';
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.colorScheme = theme;
         document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#111916' : '#f6f7f7';

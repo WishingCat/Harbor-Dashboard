@@ -40,7 +40,7 @@ def archive_response_docs(kind):
     if kind == "task":
         example["task"] = {
             "id": task_id, "slug": "example-task", "title": "example-task", "description": "",
-            "category": "General", "difficulty": "Medium", "tags": [], "status": "pending",
+            "category": "General", "difficulty": "Medium", "tags": ["物理", "人工智能"], "status": "pending",
             "author": "Example User", "created_at": "2026-09-15T00:00:00+00:00",
             "updated_at": "2026-09-15T00:00:00+00:00", "is_demo": False,
             "project_id": "project-aa", "files_count": 2, "rollouts_count": 0, "reviews_count": 0,
@@ -86,7 +86,7 @@ def archive_links(request, task, rollout_id=None):
             "api_url": base + "/api/v1/tasks/" + quote(task["id"], safe="") + "?" + urlencode({"project_id": task["project_id"], "task_set_id": task["task_set_id"]})}
 
 
-def install_agent_api(app, store, archives, cookie_user, require_project, require_task, list_projects, list_tasks, get_task, require_task_set, list_task_sets):
+def install_agent_api(app, store, archives, cookie_user, require_project, require_task, list_projects, list_tasks, get_task, require_task_set, list_task_sets, list_tags):
     bearer = HTTPBearer(auto_error=False, scheme_name="AgentBearer", description="Personal hbr_ token bound to one project. Create it with POST /api/auth/tokens using an authenticated session; it grants only /api/v1 access.")
 
     def unauthorized():
@@ -225,27 +225,33 @@ def install_agent_api(app, store, archives, cookie_user, require_project, requir
             require_project(db, project_id)
             return {"task_set": store.create_task_set(db, project_id, body.name.strip(), current)}
 
-    @app.get("/api/v1/tasks", tags=["Agent API v1"], summary="List tasks in the token's project")
-    def agent_tasks(request: Request, project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
+    @app.get("/api/v1/tasks", tags=["Agent API v1"], summary="List tasks in the token's project",
+             description="Repeat tag to narrow the list; a task is returned only when it carries every tag supplied. GET /api/v1/tags lists the vocabulary.")
+    def agent_tasks(request: Request, project_id: str | None = Query(None), task_set_id: str | None = Query(None),
+                    tag: list[str] = Query([]), principal=Depends(agent_user)):
         project_id = bound_project(principal, project_id)
-        result = list_tasks(project_id, task_set_id)
+        result = list_tasks(project_id, task_set_id, tag)
         return {"tasks": [{**task, **archive_links(request, task)} for task in result["tasks"]]}
+
+    @app.get("/api/v1/tags", tags=["Agent API v1"], summary="List the preset tag vocabulary and the tags already in use")
+    def agent_tags(project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
+        return list_tags(bound_project(principal, project_id), task_set_id)
 
     @app.get("/api/v1/tasks/{task_id}", tags=["Agent API v1"], summary="Inspect task files, existing rollouts and human reviews")
     def agent_task(task_id: str, request: Request, project_id: str | None = Query(None), task_set_id: str | None = Query(None), principal=Depends(agent_user)):
         detail = get_task(task_id, bound_project(principal, project_id), task_set_id)
         return {**detail, **archive_links(request, detail["task"]), "replayed": False}
 
-    @app.post("/api/v1/tasks", tags=["Agent API v1"], summary="Archive a Harbor task and any included rollout artifacts", description="Upload ZIP or directory files with optional paths JSON and description. Nothing is executed. Idempotency-Key (1–128 characters) is scoped to this token and route; identical logical files and metadata replay the original response, changed content returns 409.", responses=archive_response_docs("task"))
+    @app.post("/api/v1/tasks", tags=["Agent API v1"], summary="Archive a Harbor task and any included rollout artifacts", description="Upload ZIP or directory files with optional paths JSON, description and tags (a JSON array of at most 20 strings, each at most 50 characters; omit it to keep the tags declared in task.toml). Nothing is executed. Idempotency-Key (1–128 characters) is scoped to this token and route; identical logical files and metadata replay the original response, changed content returns 409.", responses=archive_response_docs("task"))
     async def agent_create_task(request: Request, files: list[UploadFile] = File(...), paths: str = Form("[]"),
-                                description: str = Form(""), project_id: str | None = Form(None), task_set_id: str | None = Form(None),
+                                description: str = Form(""), tags: str = Form(""), project_id: str | None = Form(None), task_set_id: str | None = Form(None),
                                 idempotency_key: str | None = Header(None, alias="Idempotency-Key"), principal=Depends(agent_user)):
         project_id = bound_project(principal, project_id)
         key = normalized_key(idempotency_key)
         if task_set_id is not None:
             with store.connect() as db:
                 require_task_set(db, task_set_id, project_id)
-        prepared = await archives.prepare_task(files, paths, description=description)
+        prepared = await archives.prepare_task(files, paths, description=description, tags=tags)
         return archive_once(request, principal, project_id, "/api/v1/tasks", key, prepared,
                             lambda db, current, effective_set: archives.create_task(db, prepared, current, project_id, effective_set), task_set_id=task_set_id)
 

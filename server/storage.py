@@ -9,6 +9,10 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Curated subject tags offered in the upload form and documented for Agent
+# clients. Uploads may also carry any other tag; this list is not a whitelist.
+PRESET_TAGS = ["物理", "化学", "生物", "医学", "人工智能", "具身智能", "编程"]
+
 DEFAULT_PROJECT = "project-aa"
 PROJECTS = ((DEFAULT_PROJECT, "ProjectAA"), ("paperbenchx", "PaperBenchX"))
 

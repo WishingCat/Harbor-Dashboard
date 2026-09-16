@@ -85,6 +85,19 @@ python3 harbor_upload.py task /path/to/my-task
 python3 harbor_upload.py task /path/to/my-task.zip --description '待团队质检的任务'
 ```
 
+### 标签
+
+`--tag` 给任务打标签，可重复。预设词表为 `物理`、`化学`、`生物`、`医学`、`人工智能`、`具身智能`、`编程`；这是一份推荐词表而非白名单，任何其他标签同样接受。单个标签不超过 50 个字符，每个任务最多 20 个标签。
+
+```bash
+python3 harbor_upload.py task /path/to/my-task --tag 物理 --tag 人工智能
+python3 harbor_upload.py tags                       # 预设词表与已用标签及其任务数
+python3 harbor_upload.py tasks --tag 物理            # 只列出带该标签的任务
+python3 harbor_upload.py tasks --tag 物理 --tag 编程  # 重复即取交集，两个标签都有才列出
+```
+
+完全省略 `--tag` 时，沿用任务包 `task.toml` 中 `[metadata] tags` 声明的标签；显式传入一个空列表（`--tag ''`）则清空标签。标签参与幂等指纹：同一个 `Idempotency-Key` 改变标签会返回 `409`。
+
 上传后，客户端显示任务 ID、所属任务集、质检状态和页面链接；加上 `--json` 会输出包含 `task_url` 的 JSON，便于 Agent 解析。把该链接交给评审者即可。任务名称采用 ZIP 文件名或任务目录名，简介可选，分类和难度等从任务清单读取。
 
 之后追加已有产物，以及读取质检进度：
@@ -111,7 +124,8 @@ python3 harbor_upload.py status TASK_ID --task-set "$HARBOR_TASK_SET_ID" --json
 | GET | `/api/v1/projects` | 查看 Token 所属项目 |
 | GET | `/api/v1/task-sets` | 查看项目内任务集及任务、运行、评审计数 |
 | POST | `/api/v1/task-sets` | 在 Token 项目内新建任务集 |
-| GET | `/api/v1/tasks` | 查看项目任务，可用 `task_set_id` 筛选 |
+| GET | `/api/v1/tasks` | 查看项目任务，可用 `task_set_id` 和 `tag` 筛选 |
+| GET | `/api/v1/tags` | 读取预设标签词表与项目内已用标签 |
 | POST | `/api/v1/tasks` | 上传新任务及包内已有 Rollout |
 | GET | `/api/v1/tasks/{task_id}` | 读取任务、文件、已有结果及评审 |
 | POST | `/api/v1/tasks/{task_id}/rollouts` | 给已有任务追加结果文件 |
@@ -147,8 +161,24 @@ curl --fail-with-body --show-error \
   -H 'Idempotency-Key: review-batch-2026-task-001' \
   -F 'files=@/path/to/my-task.zip' \
   -F "task_set_id=$HARBOR_TASK_SET_ID" \
-  -F 'description=可选任务简介'
+  -F 'description=可选任务简介' \
+  -F 'tags=["物理","人工智能"]'
 ```
+
+`tags` 是一个 JSON 数组字符串，最多 20 项、每项不超过 50 个字符；省略该字段时保留 `task.toml` 中声明的标签。按标签查询任务时重复 `tag` 查询参数，任务需同时带上全部标签才会返回：
+
+```bash
+curl --fail-with-body --show-error --get \
+  "$HARBOR_API_URL/api/v1/tasks" \
+  -H "Authorization: Bearer $HARBOR_API_TOKEN" \
+  --data-urlencode 'tag=物理' --data-urlencode 'tag=人工智能'
+
+curl --fail-with-body --show-error \
+  "$HARBOR_API_URL/api/v1/tags" \
+  -H "Authorization: Bearer $HARBOR_API_TOKEN"
+```
+
+`/api/v1/tags` 返回 `{"preset": [...], "in_use": [{"tag": "物理", "count": 3}, ...]}`，便于 Agent 直接读取词表，不必在客户端硬编码。
 
 上传目录时，推荐使用 Python 客户端。直接发送多个文件时，重复使用 `files` 字段，并在 `paths` 中提供与文件顺序一致的 JSON 相对路径数组，以保留 Harbor 目录结构。
 
@@ -163,6 +193,7 @@ curl --fail-with-body --show-error \
     "task_set_name": "九月任务质检",
     "title": "my-task",
     "status": "pending",
+    "tags": ["物理", "人工智能"],
     "rollouts_count": 2
   },
   "task_url": "https://harbor.example.com/?project=project-aa&task_set=TASK_SET_ID&task=TASK_ID",

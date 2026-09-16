@@ -7,6 +7,8 @@
 .api-guide-context { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding: 14px 0; border-block: 1px solid var(--border); }
 .api-guide-context > span { color: var(--muted); }
 .api-guide-context strong { margin-left: 10px; color: var(--text); font-weight: 550; overflow-wrap: anywhere; }
+.api-guide-project { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); }
+.api-guide-project > select { max-width: 260px; min-width: 0; min-height: 36px; padding: 5px 10px; color: var(--text); background: var(--surface); border-color: var(--border); font-size: 14px; font-weight: 550; text-overflow: ellipsis; }
 .api-guide-content code { padding: 1px 4px; border-radius: 3px; background: var(--polish-subtle); color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .93em; overflow-wrap: anywhere; }
 .api-guide-note { margin: 12px 0; color: var(--muted); font-size: 13px; line-height: 1.85; overflow-wrap: anywhere; }
 .api-guide-disclosure { border-bottom: 1px solid var(--border); }
@@ -56,6 +58,8 @@
 @media (max-width: 650px) {
   .api-guide-links { gap: 8px 18px; margin-bottom: 20px; }
   .api-guide-context { align-items: flex-start; flex-direction: column; }
+  .api-guide-project { width: 100%; }
+  .api-guide-project > select { flex: 1; max-width: none; font-size: 16px; }
   .api-guide-section-heading { align-items: flex-start; }
   .api-guide-methods > button { padding-inline: 9px; }
   .api-guide-set-selector { display: grid; gap: 8px; }

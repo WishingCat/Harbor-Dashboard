@@ -752,3 +752,61 @@ def test_legacy_schema_migrates_in_place_with_relations_sessions_and_files(tmp_p
     with TestClient(create_app(directory, seed=False)) as reopened:
         assert len(reopened.get("/api/tasks").json()["tasks"]) == 1
         assert len(reopened.get("/api/tasks?project_id=paperbenchx").json()["tasks"]) == 1
+
+
+def test_tag_filter_and_vocabulary_reflect_uploaded_tags(client):
+    register(client)
+    physics = upload_task(client, title="Physics task")
+    both = upload_task(client, title="Physics and AI task")
+    for task_id, tags in ((physics.json()["task"]["id"], ["物理"]), (both.json()["task"]["id"], ["物理", "人工智能"])):
+        with client.app.state.store.connect() as db:
+            db.execute("UPDATE tasks SET tags=? WHERE id=?", (json.dumps(tags, ensure_ascii=False), task_id))
+
+    def ids(**params):
+        response = client.get("/api/tasks", params=params)
+        assert response.status_code == 200, response.text
+        return {task["id"] for task in response.json()["tasks"]}
+
+    assert ids() == {physics.json()["task"]["id"], both.json()["task"]["id"]}
+    assert ids(tag="物理") == {physics.json()["task"]["id"], both.json()["task"]["id"]}
+    assert ids(tag="人工智能") == {both.json()["task"]["id"]}
+    # Repeating the parameter intersects rather than unions.
+    assert ids(tag=["物理", "人工智能"]) == {both.json()["task"]["id"]}
+    assert ids(tag="化学") == set()
+    # A blank value is ignored instead of matching nothing.
+    assert ids(tag=" ") == {physics.json()["task"]["id"], both.json()["task"]["id"]}
+
+    vocabulary = client.get("/api/tags").json()
+    assert vocabulary["preset"] == ["物理", "化学", "生物", "医学", "人工智能", "具身智能", "编程"]
+    assert vocabulary["in_use"] == [{"tag": "物理", "count": 2}, {"tag": "人工智能", "count": 1}]
+
+
+def test_upload_accepts_custom_tags_and_rejects_oversized_ones(client):
+    register(client)
+    entries = {"task/instruction.md": b"# Task", "task/task.toml": b'version = "1.0"\n'}
+    files = [("files", (path.rsplit("/", 1)[-1], content, "application/octet-stream")) for path, content in entries.items()]
+    base = {"paths": json.dumps(list(entries))}
+
+    accepted = client.post("/api/tasks", data={**base, "tags": json.dumps(["具身智能", "自定义标签"], ensure_ascii=False)}, files=files)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["task"]["tags"] == ["具身智能", "自定义标签"]
+
+    assert client.post("/api/tasks", data={**base, "tags": json.dumps(["x" * 51])}, files=files).status_code == 422
+    assert client.post("/api/tasks", data={**base, "tags": json.dumps([str(n) for n in range(21)])}, files=files).status_code == 422
+    assert client.post("/api/tasks", data={**base, "tags": "物理"}, files=files).status_code == 422
+
+
+def test_omitted_tags_keep_the_manifest_tags_and_an_empty_list_clears_them(client):
+    register(client)
+    manifest = b'version = "1.0"\n\n[metadata]\ntags = ["\xe7\x89\xa9\xe7\x90\x86"]\n'
+    entries = {"task/instruction.md": b"# Task", "task/task.toml": manifest}
+    files = [("files", (path.rsplit("/", 1)[-1], content, "application/octet-stream")) for path, content in entries.items()]
+    base = {"paths": json.dumps(list(entries))}
+
+    inherited = client.post("/api/tasks", data=base, files=files)
+    assert inherited.status_code == 200, inherited.text
+    assert inherited.json()["task"]["tags"] == ["物理"]
+
+    cleared = client.post("/api/tasks", data={**base, "tags": "[]"}, files=files)
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["task"]["tags"] == []

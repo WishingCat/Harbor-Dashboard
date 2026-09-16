@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from .archiving import ArchiveManager
 from .auth import password_hash, password_matches
 from .imports import TEXT_LIMIT
-from .storage import DEFAULT_PROJECT, Store, now, uid
+from .storage import DEFAULT_PROJECT, PRESET_TAGS, Store, now, uid
 
 ROOT = Path(__file__).resolve().parent.parent
 COOKIE = "harbor_session"
@@ -331,13 +331,37 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
             return {"task_set": store.task_set(db, task_set_id)}
 
     @app.get("/api/tasks")
-    def tasks(project_id: str = Query(DEFAULT_PROJECT), task_set_id: str | None = Query(None)):
+    def tasks(project_id: str = Query(DEFAULT_PROJECT), task_set_id: str | None = Query(None),
+              tag: list[str] = Query([])):
         with store.connect() as db:
             require_project(db, project_id)
             if task_set_id is not None:
                 require_task_set(db, task_set_id, project_id)
             rows = db.execute("SELECT id FROM tasks WHERE project_id=? AND (? IS NULL OR task_set_id=?) ORDER BY is_demo,created_at DESC", (project_id, task_set_id, task_set_id)).fetchall()
-            return {"tasks": [store.task(db, row["id"]) for row in rows]}
+            found = [store.task(db, row["id"]) for row in rows]
+            # Repeating tag narrows the result: a task must carry every tag asked for.
+            wanted = {value.strip() for value in tag if value.strip()}
+            if wanted:
+                found = [task for task in found if wanted <= set(task["tags"])]
+            return {"tasks": found}
+
+    @app.get("/api/tags")
+    def tags(project_id: str = Query(DEFAULT_PROJECT), task_set_id: str | None = Query(None)):
+        """Preset vocabulary plus the tags actually used, so clients need no hardcoded list."""
+        with store.connect() as db:
+            require_project(db, project_id)
+            if task_set_id is not None:
+                require_task_set(db, task_set_id, project_id)
+            rows = db.execute("SELECT tags FROM tasks WHERE project_id=? AND (? IS NULL OR task_set_id=?)", (project_id, task_set_id, task_set_id)).fetchall()
+        counts: dict[str, int] = {}
+        for row in rows:
+            for value in json.loads(row["tags"]):
+                counts[value] = counts.get(value, 0) + 1
+        # Presets first in their documented order, then any custom tag by frequency.
+        in_use = [{"tag": value, "count": counts[value]} for value in PRESET_TAGS if value in counts]
+        in_use += [{"tag": value, "count": count} for value, count in
+                   sorted(((v, c) for v, c in counts.items() if v not in PRESET_TAGS), key=lambda item: (-item[1], item[0]))]
+        return {"preset": PRESET_TAGS, "in_use": in_use}
 
     @app.post("/api/tasks")
     async def create_task(title: str = Form(""), description: str = Form(""),
@@ -523,7 +547,7 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     from .agent_api import install_agent_api
-    install_agent_api(app, store, archives, authenticated, require_project, require_task, projects, tasks, task_detail, require_task_set, task_sets)
+    install_agent_api(app, store, archives, authenticated, require_project, require_task, projects, tasks, task_detail, require_task_set, task_sets, tags)
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):

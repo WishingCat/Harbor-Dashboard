@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes } from 'react';
-import { ArrowRight, FileArchive, FolderOpen, LoaderCircle, Upload, X } from 'lucide-react';
+import { ArrowRight, FileArchive, FolderOpen, LoaderCircle, Plus, Upload, X } from 'lucide-react';
 import { api, post, sizeLabel } from './api';
 import { Modal } from './components';
 import type { Project, Task, TaskSet, User } from './types';
+import { MAX_TAGS, MAX_TAG_LENGTH, PRESET_TAGS, normalizeTags } from './tags';
 
 export function AuthModal({onClose, onSuccess}: {onClose: () => void; onSuccess: (user: User) => void}) {
   const [register, setRegister] = useState(false);
@@ -21,6 +22,8 @@ export function AuthModal({onClose, onSuccess}: {onClose: () => void; onSuccess:
 export function UploadModal({project, taskSet, onClose, onSuccess}: {project: Project; taskSet: TaskSet; onClose: () => void; onSuccess: (id: string) => void}) {
   const [files, setFiles] = useState<File[]>([]);
   const [description, setDescription] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -31,6 +34,7 @@ export function UploadModal({project, taskSet, onClose, onSuccess}: {project: Pr
   const folder = !!files[0]?.webkitRelativePath;
   const taskName = folder ? paths[0].split('/')[0] : files[0]?.name.replace(/\.zip$/i, '') || '';
   const totalSize = files.reduce((total, file) => total + file.size, 0);
+  const customSelected = tags.filter(tag => !PRESET_TAGS.includes(tag));
 
   function selectFiles(selected: FileList|null, kind: 'zip'|'folder') {
     if (uploading.current || !selected?.length) return;
@@ -55,6 +59,18 @@ export function UploadModal({project, taskSet, onClose, onSuccess}: {project: Pr
     }
     setFiles(chosen); setError('');
   }
+  function toggleTag(tag: string) {
+    if (uploading.current) return;
+    setTags(current => current.includes(tag) ? current.filter(item => item !== tag)
+      : current.length >= MAX_TAGS ? current : [...current, tag]);
+  }
+  function addCustomTag() {
+    const [tag] = normalizeTags([customTag]);
+    if (!tag) {setCustomTag(''); return;}
+    if (tags.length >= MAX_TAGS) {setError(`最多选择 ${MAX_TAGS} 个标签。`); return;}
+    setTags(current => current.includes(tag) ? current : [...current, tag]);
+    setCustomTag(''); setError('');
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (uploading.current) return;
@@ -64,6 +80,8 @@ export function UploadModal({project, taskSet, onClose, onSuccess}: {project: Pr
     data.append('project_id', project.id);
     data.append('task_set_id', taskSet.id);
     data.append('description', description);
+    // Sending no tags field leaves the task.toml metadata tags in place.
+    if (tags.length) data.append('tags', JSON.stringify(tags));
     files.forEach(file => data.append('files', file));
     data.append('paths', JSON.stringify(paths));
     try {const result = await api<{task: Task}>('/tasks', {method: 'POST', body: data}); onSuccess(result.task.id);}
@@ -79,6 +97,13 @@ export function UploadModal({project, taskSet, onClose, onSuccess}: {project: Pr
         <input ref={folderInput} type="file" multiple hidden disabled={busy} {...({webkitdirectory: '', directory: ''} as InputHTMLAttributes<HTMLInputElement>)} onChange={event => {selectFiles(event.target.files, 'folder'); event.currentTarget.value = '';}} />
       </div>
       <label>任务简介<span className="label-hint">可选</span><textarea name="description" value={description} onChange={event => setDescription(event.target.value)} disabled={busy} rows={3} maxLength={2000} placeholder="简要说明任务内容" /></label>
+      <fieldset className="tag-picker" disabled={busy}>
+        <legend>标签<span className="label-hint">可选，可多选</span></legend>
+        <div className="tag-options">{PRESET_TAGS.map(tag => <button type="button" key={tag} className={`tag-option ${tags.includes(tag) ? 'selected' : ''}`} aria-pressed={tags.includes(tag)} onClick={() => toggleTag(tag)}>{tag}</button>)}</div>
+        <div className="tag-custom"><input value={customTag} maxLength={MAX_TAG_LENGTH} placeholder="自定义标签" aria-label="自定义标签" onChange={event => setCustomTag(event.target.value)} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); addCustomTag();}}} /><button type="button" className="button secondary small" onClick={addCustomTag} disabled={!customTag.trim()}><Plus size={15} />添加</button></div>
+        {customSelected.length > 0 && <div className="tag-selected" role="list">{customSelected.map(tag => <span className="tag-chip" role="listitem" key={tag}>{tag}<button type="button" aria-label={`移除标签 ${tag}`} onClick={() => toggleTag(tag)}><X size={12} /></button></span>)}</div>}
+        <p className="tag-hint">{tags.length ? `已选 ${tags.length} / ${MAX_TAGS} 个标签。` : '不选则沿用任务包 task.toml 中声明的标签。'}</p>
+      </fieldset>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="modal-footer"><button type="submit" className="button primary" disabled={busy || !files.length}>{busy ? <><LoaderCircle size={16} className="spin" />正在上传…</> : <><Upload size={16} />上传任务</>}</button></div>
     </form>

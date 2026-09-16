@@ -20,3 +20,21 @@
   .upload-simple .upload-dropzone { padding: 22px 14px; }
   .form-stack.upload-simple label textarea { font-size: 16px; }
 }
+
+.tag-picker { min-width: 0; margin: 0; padding: 0; border: 0; }
+.tag-picker > legend { padding: 0; margin-bottom: 9px; color: var(--text); font-size: 14px; font-weight: 550; }
+.tag-picker > legend .label-hint { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.tag-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-option { min-height: 32px; padding: 5px 13px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+.tag-option:hover { border-color: var(--accent); }
+.tag-option.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 550; }
+.tag-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tag-custom { display: flex; gap: 8px; margin-top: 10px; }
+.tag-custom > input { flex: 1; min-width: 0; min-height: 36px; padding: 6px 11px; font-size: 14px; }
+.tag-custom > button { flex-shrink: 0; }
+.tag-selected { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 11px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; }
+.tag-chip > button { display: inline-flex; align-items: center; padding: 2px; border-radius: 50%; color: inherit; cursor: pointer; }
+.tag-chip > button:hover { background: var(--surface); }
+.tag-hint { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.tag-picker:disabled .tag-option, .tag-picker:disabled .tag-chip > button { cursor: not-allowed; opacity: .6; }

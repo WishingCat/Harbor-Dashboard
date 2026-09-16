@@ -329,3 +329,63 @@ def test_agent_client_download_is_fixed_public_attachment_and_missing_file_retur
     assert "attachment" in response.headers["content-disposition"] and "harbor_upload.py" in response.headers["content-disposition"]
     script.unlink()
     assert client.get("/api/agent-client.py").status_code == 404
+
+
+def test_agent_upload_sets_tags_and_lists_the_vocabulary(client, app):
+    register(client)
+    token = mint(client)["token"]
+    response = client.post("/api/v1/tasks", headers=headers(token),
+                           data={"tags": json.dumps(["物理", "人工智能"], ensure_ascii=False)},
+                           files=[("files", ("agent-task.zip", make_zip({"task/task.toml": b'version="1.0"', "task/instruction.md": b"# Task"}), "application/zip"))])
+    assert response.status_code == 200, response.text
+    assert response.json()["task"]["tags"] == ["物理", "人工智能"]
+
+    vocabulary = client.get("/api/v1/tags", headers=headers(token))
+    assert vocabulary.status_code == 200, vocabulary.text
+    assert vocabulary.json()["preset"][0] == "物理"
+    assert vocabulary.json()["in_use"] == [{"tag": "物理", "count": 1}, {"tag": "人工智能", "count": 1}]
+
+    assert client.post("/api/v1/tasks", headers=headers(token), data={"tags": json.dumps(["x" * 51])},
+                       files=[("files", ("agent-task.zip", make_zip({"task/task.toml": b'version="1.0"', "task/instruction.md": b"# Task"}), "application/zip"))]).status_code == 422
+
+
+def test_agent_task_list_intersects_repeated_tag_parameters(client):
+    register(client)
+    token = mint(client)["token"]
+
+    def upload(name, tags):
+        response = client.post("/api/v1/tasks", headers=headers(token), data={"tags": json.dumps(tags, ensure_ascii=False)},
+                               files=[("files", (f"{name}.zip", make_zip({"task/task.toml": b'version="1.0"', "task/instruction.md": f"# {name}".encode()}), "application/zip"))])
+        assert response.status_code == 200, response.text
+        return response.json()["task"]["id"]
+
+    physics = upload("physics", ["物理"])
+    both = upload("physics-ai", ["物理", "人工智能"])
+
+    def ids(**params):
+        response = client.get("/api/v1/tasks", headers=headers(token), params=params)
+        assert response.status_code == 200, response.text
+        return {task["id"] for task in response.json()["tasks"]}
+
+    assert ids() == {physics, both}
+    assert ids(tag="物理") == {physics, both}
+    assert ids(tag=["物理", "人工智能"]) == {both}
+    assert ids(tag="编程") == set()
+
+
+def test_changing_only_the_tags_conflicts_under_one_idempotency_key(client):
+    register(client)
+    token = mint(client)["token"]
+
+    def upload(tags):
+        return client.post("/api/v1/tasks", headers=headers(token, "tag-key"), data={"tags": json.dumps(tags, ensure_ascii=False)},
+                           files=[("files", ("agent-task.zip", make_zip({"task/task.toml": b'version="1.0"', "task/instruction.md": b"# Task"}), "application/zip"))])
+
+    assert upload(["物理"]).status_code == 200
+    assert upload(["物理"]).json()["replayed"] is True
+    assert upload(["化学"]).status_code == 409
+
+
+def test_agent_tags_endpoint_requires_a_token(client):
+    register(client)
+    assert client.get("/api/v1/tags").status_code == 401
