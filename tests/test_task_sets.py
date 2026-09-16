@@ -299,3 +299,58 @@ def test_seed_and_legacy_sql_inserts_are_assigned_to_a_task_set(tmp_path):
             VALUES ('legacy-writer','legacy-writer','Stored','','software-engineering','medium','[]','System','2026-09-16','2026-09-16','paperbenchx')""")
         assert db.execute("SELECT task_set_id FROM tasks WHERE id='legacy-writer'").fetchone()[0] == "default:paperbenchx"
         assert not db.execute("PRAGMA foreign_key_check").fetchall()
+
+
+def test_task_set_deletion_requires_ownership_and_an_empty_set(client, app):
+    owner = register(client)
+    created = client.post("/api/task-sets", json={"name": "可删除的集合", "project_id": "project-aa"})
+    assert created.status_code == 200, created.text
+    set_id = created.json()["task_set"]["id"]
+
+    # The default set only exists once something has landed in it.
+    assert upload(client).status_code == 200
+    listed = {s["id"]: s for s in client.get("/api/task-sets", params={"project_id": "project-aa"}).json()["task_sets"]}
+    assert listed[set_id]["can_delete"] is True
+    # It is where every unscoped upload lands and a trigger recreates it, so it stays.
+    assert listed["default:project-aa"]["can_delete"] is False
+    assert client.delete("/api/task-sets/default:project-aa").status_code == 409
+
+    uploaded = upload(client, task_set_id=set_id)
+    assert uploaded.status_code == 200, uploaded.text
+    blocked = client.delete(f"/api/task-sets/{set_id}", params={"project_id": "project-aa"})
+    assert blocked.status_code == 409
+    assert "1" in blocked.json()["detail"]
+
+    assert client.delete(f"/api/tasks/{uploaded.json()['task']['id']}").status_code == 200
+    assert client.delete(f"/api/task-sets/{set_id}", params={"project_id": "project-aa"}).status_code == 200
+    assert set_id not in {s["id"] for s in client.get("/api/task-sets", params={"project_id": "project-aa"}).json()["task_sets"]}
+    assert client.delete(f"/api/task-sets/{set_id}").status_code == 404
+    assert owner["role"] == "admin"
+
+
+def test_only_the_creator_or_an_administrator_may_delete_a_task_set(client, app):
+    register(client)
+    mine = client.post("/api/task-sets", json={"name": "管理员的集合", "project_id": "project-aa"}).json()["task_set"]["id"]
+    with TestClient(app) as member:
+        register(member, "member@example.test")
+        theirs = member.post("/api/task-sets", json={"name": "成员的集合", "project_id": "project-aa"}).json()["task_set"]["id"]
+        seen = {s["id"]: s for s in member.get("/api/task-sets", params={"project_id": "project-aa"}).json()["task_sets"]}
+        assert seen[theirs]["can_delete"] is True
+        assert seen[mine]["can_delete"] is False
+        assert member.delete(f"/api/task-sets/{mine}").status_code == 403
+        assert member.delete(f"/api/task-sets/{theirs}").status_code == 200
+    # An administrator may remove a set they did not create.
+    again = client.post("/api/task-sets", json={"name": "另一个", "project_id": "project-aa"}).json()["task_set"]["id"]
+    assert client.delete(f"/api/task-sets/{again}").status_code == 200
+    assert client.get("/api/task-sets", params={"project_id": "project-aa"}).status_code == 200
+
+
+def test_anonymous_readers_cannot_delete_a_task_set(client):
+    register(client)
+    set_id = client.post("/api/task-sets", json={"name": "匿名不可删", "project_id": "project-aa"}).json()["task_set"]["id"]
+    listed = {s["id"]: s for s in client.get("/api/task-sets", params={"project_id": "project-aa"}).json()["task_sets"]}
+    assert listed[set_id]["can_delete"] is True
+    client.post("/api/auth/logout")
+    anonymous = {s["id"]: s for s in client.get("/api/task-sets", params={"project_id": "project-aa"}).json()["task_sets"]}
+    assert anonymous[set_id]["can_delete"] is False
+    assert client.delete(f"/api/task-sets/{set_id}").status_code == 401

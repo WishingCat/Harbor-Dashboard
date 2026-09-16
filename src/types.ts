@@ -1,7 +1,7 @@
 export type ApiToken = {id: string; name: string; project_id: string | null; created_at: string; expires_at: string; last_used_at: string | null; revoked_at: string | null; revoked: boolean};
 export type User = {id: string; name: string; username: string|null; email: string; role: 'admin' | 'member'};
 export type Project = {id: string; name: string; task_sets_count: number; tasks_count: number; rollouts_count: number; reviews_count: number};
-export type TaskSet = {id: string; project_id: string; name: string; author: string; created_at: string; tasks_count: number; rollouts_count: number; pending_count: number; approved_count: number};
+export type TaskSet = {id: string; project_id: string; name: string; author: string; created_at: string; tasks_count: number; rollouts_count: number; pending_count: number; approved_count: number; can_delete?: boolean};
 export type TaskStatus = 'pending' | 'approved' | 'changes_requested';
 export type Task = {id: string; project_id: string; task_set_id: string; task_set_name: string; slug: string; title: string; description: string; category: string; difficulty: 'easy' | 'medium' | 'hard'; tags: string[]; status: TaskStatus; author: string; created_at: string; updated_at: string; files_count: number; rollouts_count: number; reviews_count: number; is_demo: boolean};
 export type Artifact = {id: string; path: string; size: number; kind: 'task' | 'rollout'; mime_type: string};

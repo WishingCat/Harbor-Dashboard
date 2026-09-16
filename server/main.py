@@ -342,12 +342,41 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
             db.execute("INSERT INTO projects (id,name) VALUES (?,?)", (project_id, body.name.strip()))
             return {"project": store.project(db, project_id)}
 
-    @app.get("/api/task-sets")
-    def task_sets(project_id: str = Query(DEFAULT_PROJECT)):
+    def may_delete_task_set(row, user):
+        """Its creator or an administrator, matching the rule for tasks. The default
+        set is the fallback every upload lands in and a trigger recreates it, so it
+        is never removable."""
+        if row["id"] == f"default:{row['project_id']}":
+            return False
+        return bool(user) and (user["role"] == "admin" or row["author_id"] == user["id"])
+
+    def task_sets(project_id: str = Query(DEFAULT_PROJECT), user=None):
         with store.connect() as db:
             require_project(db, project_id)
-            rows = db.execute("SELECT id FROM task_sets WHERE project_id=? ORDER BY created_at,rowid", (project_id,)).fetchall()
-            return {"task_sets": [store.task_set(db, row["id"]) for row in rows]}
+            rows = db.execute("SELECT * FROM task_sets WHERE project_id=? ORDER BY created_at,rowid", (project_id,)).fetchall()
+            return {"task_sets": [{**store.task_set(db, row["id"]), "can_delete": may_delete_task_set(row, user)}
+                                  for row in rows]}
+
+    @app.get("/api/task-sets")
+    def read_task_sets(project_id: str = Query(DEFAULT_PROJECT), user=Depends(current_user)):
+        return task_sets(project_id, user)
+
+    @app.delete("/api/task-sets/{task_set_id}")
+    def remove_task_set(task_set_id: str, project_id: str | None = Query(None), user=Depends(authenticated)):
+        with store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            require_task_set(db, task_set_id, project_id)
+            row = db.execute("SELECT * FROM task_sets WHERE id=?", (task_set_id,)).fetchone()
+            if row["id"] == f"default:{row['project_id']}":
+                raise HTTPException(409, "默认任务集不能删除")
+            if not may_delete_task_set(row, user):
+                raise HTTPException(403, "只有任务集创建者或管理员可以删除任务集")
+            remaining = db.execute("SELECT COUNT(*) c FROM tasks WHERE task_set_id=?", (task_set_id,)).fetchone()["c"]
+            # Deleting the container must not quietly destroy other people's tasks.
+            if remaining:
+                raise HTTPException(409, f"该任务集还有 {remaining} 个任务，请先删除或移走任务")
+            db.execute("DELETE FROM task_sets WHERE id=?", (task_set_id,))
+        return {"ok": True, "deleted": task_set_id}
 
     @app.post("/api/task-sets")
     def create_task_set(body: TaskSetBody, user=Depends(authenticated)):

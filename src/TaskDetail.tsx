@@ -6,6 +6,7 @@ import { api, post, projectPath, relativeTime, sizeLabel } from './api';
 import { Avatar, categories, difficultyLabels, Empty, FileIcon, Loading, Status } from './components';
 import ArtifactMarkdown from './ArtifactMarkdown';
 import { lockPageScroll } from './pageScrollLock';
+import { copyText } from './clipboard';
 import type { Artifact, Detail, Project, Review, Task, User } from './types';
 import './detail.css';
 
@@ -160,7 +161,9 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
       link.searchParams.set('project', project.id); link.searchParams.set('task', task.id);
       link.searchParams.set('task_set', task.task_set_id);
       if (source === 'rollout' && rollout) link.searchParams.set('rollout', rollout.id); else link.searchParams.delete('rollout');
-      link.hash = ''; await navigator.clipboard.writeText(link.toString()); notify('任务链接已复制');
+      link.hash = '';
+      if (!await copyText(link.toString())) throw new Error('Clipboard unavailable');
+      notify('任务链接已复制');
     } catch {notify('复制失败，请从浏览器地址栏复制链接');}
   }
   return <div className={`detail-page reader-focus ${rollouts.length ? 'has-rollouts' : 'task-only'}`}>

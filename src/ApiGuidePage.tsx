@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, Copy, Download, ExternalLink, KeyRound, LoaderCircle, Trash2 } from 'lucide-react';
 import { api, post } from './api';
+import { copyText } from './clipboard';
 import type { ApiToken, Project, TaskSet, User } from './types';
 import { PRESET_TAGS } from './tags';
 import './api-guide.css';
@@ -21,8 +22,7 @@ function CodeExample({title, code, notify}: {title: string; code: string; notify
   }, [copied]);
   async function copy() {
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-      await navigator.clipboard.writeText(code);
+      if (!await copyText(code)) throw new Error('Clipboard unavailable');
       if (currentCode.current !== code) return;
       setCopied(true); notify('示例已复制');
     } catch {

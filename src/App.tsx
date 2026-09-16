@@ -240,7 +240,7 @@ export default function App() {
         : page === 'api' ? <ApiGuidePage key={project.id} project={project} projects={projects} taskSets={taskSets} user={user} onProjectChange={changeProject} onLogin={() => setAuthOpen(true)} notify={notify} />
         : page === 'settings' ? <SettingsPage user={user} onLogin={() => setAuthOpen(true)} notify={notify} />
         : page === 'rollouts' ? <RolloutsPage key={project.id} tasks={scopedTasks} onOpen={openTask} />
-        : page === 'tasks' && !taskSet ? <TaskSetsPage project={project} taskSets={taskSets} onOpen={openTaskSet} onCreate={() => requestCreate('task-set')} />
+        : page === 'tasks' && !taskSet ? <TaskSetsPage project={project} taskSets={taskSets} onOpen={openTaskSet} onCreate={() => requestCreate('task-set')} onDeleted={refresh} notify={notify} />
         : <TaskLibrary key={`${project.id}-${taskSetId || 'all'}-${page}`} title={taskSet?.name} onBack={taskSet ? () => openTaskSet(null) : undefined} tasks={matchedTasks} allTasks={scopedTasks} query={query} onQuery={setQuery} onOpen={openTask} onUpload={taskSet ? requestUpload : undefined} searchRef={searchRef} />}</main>
 
     </div>

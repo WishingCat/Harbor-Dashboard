@@ -65,3 +65,9 @@
   .task-set-name > svg { width: 18px; height: 18px; }
   .task-sets-section > .empty-state { padding-block: 44px; }
 }
+
+.task-set-actions { width: 1%; white-space: nowrap; }
+.task-set-delete { display: inline-flex; align-items: center; min-height: 28px; padding: 3px 8px; border-radius: 4px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.task-set-delete:hover { color: var(--text); background: var(--polish-subtle); }
+.task-set-delete.armed { color: #b3261e; background: #fdecea; font-weight: 550; }
+html[data-theme='dark'] .task-set-delete.armed { color: #ffb4ab; background: #4a1410; }
