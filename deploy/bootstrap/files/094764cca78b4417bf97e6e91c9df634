@@ -1,6 +1,0 @@
-experiment,seed,status,accuracy
-baseline,1,ok,0.7
-variant,1,failed,
-baseline,2,ok,0.9
-variant,2,ok,0.86
-baseline,3,failed,
