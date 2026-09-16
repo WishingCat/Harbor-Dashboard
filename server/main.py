@@ -5,7 +5,9 @@ import json
 import os
 import re
 import secrets
+import tempfile
 import time
+import zipfile
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -14,6 +16,7 @@ import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 from .archiving import ArchiveManager
@@ -453,6 +456,55 @@ def create_app(data_dir=None, seed: bool | None = None, bootstrap_dir=None):
             raise HTTPException(404, "文件不存在")
         return FileResponse(store.blobs / row["id"], filename=Path(row["path"]).name,
                             media_type="application/octet-stream", headers={"Content-Security-Policy": "sandbox"})
+
+    def archive_name(stem):
+        """A filename the browser will accept, keeping CJK but dropping separators."""
+        cleaned = re.sub(r"[^\w.\-\u4e00-\u9fff]+", "-", stem).strip("-.") or "files"
+        return cleaned[:80] + ".zip"
+
+    @app.get("/api/tasks/{task_id}/archive")
+    def archive(task_id: str, project_id: str | None = Query(None), task_set_id: str | None = Query(None),
+                rollout_id: str | None = Query(None), prefix: str = Query("")):
+        """Zip a folder from one task, or the whole file list when no prefix is given."""
+        with store.connect() as db:
+            task = require_task(db, task_id, project_id, task_set_id)
+            if rollout_id is not None:
+                owner = db.execute("SELECT task_id FROM rollouts WHERE id=?", (rollout_id,)).fetchone()
+                if not owner or owner["task_id"] != task_id:
+                    raise HTTPException(404, "Rollout 不存在")
+            files = store.file_list(db, task_id=None if rollout_id else task_id, rollout_id=rollout_id)
+        folder = prefix.strip().strip("/")
+        if folder:
+            # Match on a path boundary so "tests" never picks up "tests-extra".
+            head = folder + "/"
+            files = [f for f in files if f["path"] == folder or f["path"].startswith(head)]
+        if not files:
+            raise HTTPException(404, "该目录下没有可下载的文件")
+        missing = [f for f in files if not (store.blobs / f["id"]).is_file()]
+        if missing:
+            raise HTTPException(404, "文件内容不可用")
+        handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        try:
+            with zipfile.ZipFile(handle, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+                for item in files:
+                    if not folder:
+                        arcname = item["path"]
+                    elif item["path"] == folder:
+                        # prefix named a file rather than a folder; archive it alone.
+                        arcname = Path(folder).name
+                    else:
+                        # Keep the folder itself as the archive root, not the whole tree.
+                        arcname = Path(folder).name + "/" + item["path"][len(folder) + 1:]
+                    bundle.write(store.blobs / item["id"], arcname)
+            handle.close()
+        except BaseException:
+            handle.close()
+            Path(handle.name).unlink(missing_ok=True)
+            raise
+        stem = Path(folder).name if folder else task["slug"]
+        return FileResponse(handle.name, filename=archive_name(stem), media_type="application/zip",
+                            headers={"Content-Security-Policy": "sandbox"},
+                            background=BackgroundTask(lambda: Path(handle.name).unlink(missing_ok=True)))
 
     @app.post("/api/tasks/{task_id}/reviews")
     def create_review(task_id: str, body: ReviewBody, project_id: str | None = Query(None), task_set_id: str | None = Query(None), user=Depends(authenticated)):

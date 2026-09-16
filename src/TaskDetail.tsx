@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { ArrowLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, CircleCheck, Clock3, Code2, Download, Eye, FileText, FolderClosed, FolderOpen, GitBranch, Languages, Link2, LoaderCircle, MessageSquare, Play, RefreshCw, Send, Trash2, X } from 'lucide-react';
+import { Download as DownloadIcon, FolderDown } from 'lucide-react';
 import { api, post, projectPath, relativeTime, sizeLabel } from './api';
 import { Avatar, categories, difficultyLabels, Empty, FileIcon, Loading, Status } from './components';
 import ArtifactMarkdown from './ArtifactMarkdown';
@@ -24,6 +25,7 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
   const [activePanel, setActivePanel] = useState<AuxiliaryPanel|null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menu, setMenu] = useState<{at: {x: number; y: number}; target: TreeTarget} | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [isDrawer, setIsDrawer] = useState(() => matchMedia(DRAWER_QUERY).matches);
   const filesButton = useRef<HTMLButtonElement>(null);
@@ -132,6 +134,26 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
       await onRefresh();
     } catch (e) {notify((e as Error).message); setDeleting(false);}
   }
+  function openMenu(event: ReactMouseEvent, target: TreeTarget) {
+    event.preventDefault(); event.stopPropagation();
+    setMenu({at: {x: event.clientX, y: event.clientY}, target});
+  }
+  function downloadTarget(target: TreeTarget) {
+    // A plain navigation keeps the session cookie and lets Content-Disposition
+    // do the saving, so the page itself never leaves.
+    if (target.kind === 'file') {
+      location.href = projectPath(`/api/files/${encodeURIComponent(target.file.id)}/download`, project.id);
+      return;
+    }
+    const params = new URLSearchParams({project_id: project.id, prefix: target.path});
+    if (source === 'rollout' && rolloutId) params.set('rollout_id', rolloutId);
+    location.href = `/api/tasks/${id}/archive?${params}`;
+  }
+  function downloadEverything() {
+    const params = new URLSearchParams({project_id: project.id});
+    if (source === 'rollout' && rolloutId) params.set('rollout_id', rolloutId);
+    location.href = `/api/tasks/${id}/archive?${params}`;
+  }
   async function shareTask() {
     try {
       const link = new URL(location.href);
@@ -155,11 +177,12 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
       <div className="detail-tools"><button ref={translationButton} className={`button ghost small ${translationOpen ? 'is-active' : ''}`} aria-expanded={translationOpen} aria-controls="document-translation" onClick={() => {setTranslationOpen(!translationOpen); if (!translationOpen && matchMedia('(max-width: 900px)').matches) requestAnimationFrame(() => document.getElementById('document-translation')?.scrollIntoView({behavior: 'auto', block: 'start'}));}}><Languages size={16} />双语阅读</button><button ref={reviewsButton} className={`button ghost small ${activePanel === 'reviews' ? 'is-active' : ''}`} aria-expanded={activePanel === 'reviews'} aria-controls="task-reviews-panel" onClick={() => togglePanel('reviews')}><MessageSquare size={15} />评审<span>{reviews.length}</span></button></div>
     </div>
     {source === 'rollout' && rollouts.length > 0 && <div className="rollout-context"><div><GitBranch size={17} /><select aria-label="选择 Rollout 结果" value={rolloutId} onChange={e => {setRolloutId(e.target.value); const chosen = rollouts.find(r => r.id === e.target.value); setSelected(chosen?.files.find(f => f.path.endsWith('result.json')) || chosen?.files[0] || null);}}>{rollouts.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>{rollout && <><span className="mono">{rollout.agent || 'Agent 未指定'} · {rollout.model || '模型未指定'}</span><span><Clock3 size={13} />{rollout.duration_seconds != null ? `${Math.round(rollout.duration_seconds)}s` : 'N/A'}</span><span>Reward <strong className="mono">{rollout.reward ?? 'N/A'}</strong></span><span className={`run-status ${rollout.status}`}><span />{rollout.status === 'passed' ? '运行成功' : rollout.status === 'failed' ? '运行失败' : '结果未判定'}</span></>}</div>}
+    {menu && <TreeMenu at={menu.at} target={menu.target} onDownload={downloadTarget} onClose={() => setMenu(null)} />}
     {isDrawer && activePanel && <button className="reader-panel-scrim" aria-label="关闭辅助面板" tabIndex={-1} onClick={() => closePanel()} />}
     <div className={`reader-workspace ${activePanel ? `panel-${activePanel}` : ''} ${translationOpen ? 'with-translation' : ''}`}>
       <aside ref={filesPanel} className="reader-panel reader-files-panel" id="task-files-panel" hidden={!filesVisible} inert={!filesVisible} role={isDrawer && activePanel === 'files' ? 'dialog' : undefined} aria-modal={isDrawer && activePanel === 'files' ? true : undefined} aria-labelledby="task-files-heading" tabIndex={-1}>
         <div className="reader-panel-heading"><h2 id="task-files-heading">{source === 'task' ? '任务目录' : '结果目录'}<span>{visibleFiles.length}</span></h2>{isDrawer && <button className="icon-button reader-panel-close" aria-label="关闭目录" onClick={() => closePanel()}><X size={18} /></button>}</div>
-        <div className="file-explorer"><div className="explorer-root"><FolderOpen size={15} /><span>{source === 'task' ? task.slug : rollout?.name || 'rollout'}</span></div>{visibleFiles.length ? <FileTree files={visibleFiles} selected={selected?.id} onSelect={selectDocument} /> : <p className="explorer-empty">尚未上传文件</p>}</div>
+        <div className="file-explorer"><div className="explorer-root"><FolderOpen size={15} /><span>{source === 'task' ? task.slug : rollout?.name || 'rollout'}</span>{visibleFiles.length > 0 && <button type="button" className="explorer-download" title="打包下载全部文件" aria-label="打包下载全部文件" onClick={downloadEverything}><FolderDown size={15} /></button>}</div>{visibleFiles.length ? <FileTree files={visibleFiles} selected={selected?.id} onSelect={selectDocument} onMenu={openMenu} /> : <p className="explorer-empty">尚未上传文件</p>}</div>
       </aside>
       <div ref={documentHost} className="reader-document-host" role="region" tabIndex={-1} aria-label="文档内容"><FileReader projectId={project.id} key={`${project.id}:${selected?.id || 'empty'}`} file={selected} files={visibleFiles} onSelect={selectDocument} translationOpen={translationOpen} closeTranslation={() => {setTranslationOpen(false); requestAnimationFrame(() => translationButton.current?.focus({preventScroll: true}));}} user={user} onLogin={requestLogin} /></div>
       <aside ref={reviewsPanel} className="reader-panel reader-reviews-panel" id="task-reviews-panel" hidden={activePanel !== 'reviews'} inert={activePanel !== 'reviews'} role={isDrawer && activePanel === 'reviews' ? 'dialog' : undefined} aria-modal={isDrawer && activePanel === 'reviews' ? true : undefined} aria-labelledby="task-reviews-heading" tabIndex={-1}>
@@ -170,7 +193,40 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
   </div>;
 }
 
-function FileTree({files, selected, onSelect}: {files: Artifact[]; selected?: string; onSelect: (file: Artifact) => void}) {
+type TreeTarget = {kind: 'file'; file: Artifact} | {kind: 'folder'; path: string};
+
+/** Right-click menu for the file tree: a file downloads as-is, a folder as a ZIP. */
+function TreeMenu({at, target, onDownload, onClose}: {at: {x: number; y: number}; target: TreeTarget; onDownload: (t: TreeTarget) => void; onClose: () => void}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (event: MouseEvent) => {if (!box.current?.contains(event.target as Node)) onClose();};
+    const key = (event: KeyboardEvent) => {if (event.key === 'Escape') onClose();};
+    // Capture so a click anywhere, including other tree rows, dismisses first.
+    document.addEventListener('mousedown', away, true);
+    document.addEventListener('keydown', key);
+    window.addEventListener('resize', onClose);
+    window.addEventListener('scroll', onClose, true);
+    return () => {
+      document.removeEventListener('mousedown', away, true);
+      document.removeEventListener('keydown', key);
+      window.removeEventListener('resize', onClose);
+      window.removeEventListener('scroll', onClose, true);
+    };
+  }, [onClose]);
+  useEffect(() => {box.current?.querySelector('button')?.focus({preventScroll: true});}, []);
+  const label = target.kind === 'file' ? '下载文件' : '打包下载文件夹';
+  const name = target.kind === 'file' ? target.file.path.split('/').pop() : target.path.split('/').pop();
+  // Keep the menu inside the viewport when the click lands near an edge.
+  const style = {left: Math.min(at.x, window.innerWidth - 220), top: Math.min(at.y, window.innerHeight - 90)} as CSSProperties;
+  return <div ref={box} className="tree-menu" style={style} role="menu" aria-label="文件操作">
+    <div className="tree-menu-name" title={name}>{name}</div>
+    <button type="button" role="menuitem" onClick={() => {onDownload(target); onClose();}}>
+      {target.kind === 'file' ? <DownloadIcon size={14} /> : <FolderDown size={14} />}{label}
+    </button>
+  </div>;
+}
+
+function FileTree({files, selected, onSelect, onMenu}: {files: Artifact[]; selected?: string; onSelect: (file: Artifact) => void; onMenu: (event: ReactMouseEvent, target: TreeTarget) => void}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const paths = [...files].sort((a, b) => {if (a.path.endsWith('instruction.md')) return -1; if (b.path.endsWith('instruction.md')) return 1; return a.path.localeCompare(b.path);});
   const renderedDirs = new Set<string>();
@@ -180,10 +236,10 @@ function FileTree({files, selected, onSelect}: {files: Artifact[]; selected?: st
     let hidden = false;
     for (let i = 0; i < parts.length - 1; i++) {
       const dir = parts.slice(0, i + 1).join('/');
-      if (!renderedDirs.has(dir) && !hidden) {renderedDirs.add(dir); rows.push(<button key={`dir-${dir}`} className="tree-directory" style={{'--tree-indent': `${14 + i * 12}px`} as CSSProperties} aria-expanded={!collapsed.has(dir)} onClick={() => setCollapsed(prev => {const next = new Set(prev); if (next.has(dir)) next.delete(dir); else next.add(dir); return next;})}>{collapsed.has(dir) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}<FolderClosed size={14} /><span>{parts[i]}</span></button>);}
+      if (!renderedDirs.has(dir) && !hidden) {renderedDirs.add(dir); rows.push(<button key={`dir-${dir}`} className="tree-directory" style={{'--tree-indent': `${14 + i * 12}px`} as CSSProperties} aria-expanded={!collapsed.has(dir)} title={`${dir}（右键可打包下载）`} onContextMenu={event => onMenu(event, {kind: 'folder', path: dir})} onClick={() => setCollapsed(prev => {const next = new Set(prev); if (next.has(dir)) next.delete(dir); else next.add(dir); return next;})}>{collapsed.has(dir) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}<FolderClosed size={14} /><span>{parts[i]}</span></button>);}
       if (collapsed.has(dir)) hidden = true;
     }
-    if (!hidden) rows.push(<button key={file.id} className={`tree-file ${selected === file.id ? 'selected' : ''}`} style={{'--tree-indent': `${24 + (parts.length - 1) * 12}px`} as CSSProperties} onClick={() => onSelect(file)} title={file.path} aria-current={selected === file.id ? 'true' : undefined}><FileIcon path={file.path} size={14} /><span>{parts[parts.length - 1]}</span></button>);
+    if (!hidden) rows.push(<button key={file.id} className={`tree-file ${selected === file.id ? 'selected' : ''}`} style={{'--tree-indent': `${24 + (parts.length - 1) * 12}px`} as CSSProperties} onClick={() => onSelect(file)} onContextMenu={event => onMenu(event, {kind: 'file', file})} title={`${file.path}（右键可下载）`} aria-current={selected === file.id ? 'true' : undefined}><FileIcon path={file.path} size={14} /><span>{parts[parts.length - 1]}</span></button>);
     return rows;
   })}</div>;
 }

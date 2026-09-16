@@ -909,3 +909,54 @@ def test_translation_targets_english_with_the_same_fencing(client, app, monkeypa
     assert "into English" in captured["messages"][0]["content"]
     assert captured["messages"][1]["content"].rstrip().endswith("Output only the translation.")
     assert "into English" in captured["messages"][1]["content"]
+
+
+def test_archive_downloads_a_folder_as_a_zip_rooted_at_that_folder(client, app):
+    register(client)
+    entries = {"task/task.toml": b'version = "1.0"\n', "task/instruction.md": b"# Task\n",
+               "task/tests/test.sh": b"echo run\n", "task/tests/data/case.csv": b"a,b\n1,2\n",
+               "task/tests-extra/other.txt": b"not part of tests\n",
+               "task/environment/Dockerfile": b"FROM python:3.12-slim\n"}
+    task_id = upload_task(client, entries=entries).json()["task"]["id"]
+
+    whole = client.get(f"/api/tasks/{task_id}/archive")
+    assert whole.status_code == 200, whole.text
+    assert whole.headers["content-type"] == "application/zip"
+    names = set(zipfile.ZipFile(io.BytesIO(whole.content)).namelist())
+    assert names == {"task.toml", "instruction.md", "tests/test.sh", "tests/data/case.csv",
+                     "tests-extra/other.txt", "environment/Dockerfile"}
+
+    folder = client.get(f"/api/tasks/{task_id}/archive", params={"prefix": "tests"})
+    assert folder.status_code == 200
+    bundle = zipfile.ZipFile(io.BytesIO(folder.content))
+    # Rooted at the folder, and a sibling with the same leading characters stays out.
+    assert set(bundle.namelist()) == {"tests/test.sh", "tests/data/case.csv"}
+    assert bundle.read("tests/data/case.csv") == b"a,b\n1,2\n"
+    assert "tests.zip" in folder.headers["content-disposition"]
+
+    nested = client.get(f"/api/tasks/{task_id}/archive", params={"prefix": "tests/data"})
+    assert set(zipfile.ZipFile(io.BytesIO(nested.content)).namelist()) == {"data/case.csv"}
+    # A leading or trailing slash names the same folder.
+    assert client.get(f"/api/tasks/{task_id}/archive", params={"prefix": "/tests/"}).status_code == 200
+    assert client.get(f"/api/tasks/{task_id}/archive", params={"prefix": "nope"}).status_code == 404
+
+
+def test_archive_respects_project_scope_and_rollout_ownership(client, app):
+    register(client)
+    task_id = upload_task(client, entries={"task/task.toml": b'version = "1.0"\n',
+                                           "task/instruction.md": b"# Task\n"}).json()["task"]["id"]
+    assert client.get(f"/api/tasks/{task_id}/archive", params={"project_id": "paperbenchx"}).status_code == 404
+    assert client.get("/api/tasks/deadbeef/archive").status_code == 404
+    assert client.get(f"/api/tasks/{task_id}/archive", params={"rollout_id": "not-a-rollout"}).status_code == 404
+
+    other = upload_task(client, title="Other task", entries={"task/task.toml": b'version = "1.0"\n',
+                                                             "task/instruction.md": b"# Other\n"}).json()["task"]["id"]
+    rollout = client.post(f"/api/tasks/{other}/rollouts", data={"name": "trial", "paths": json.dumps(["result.json"])},
+                          files=[("files", ("result.json", json.dumps({"trial_name": "trial"}), "application/json"))])
+    assert rollout.status_code == 200, rollout.text
+    rid = client.get(f"/api/tasks/{other}").json()["rollouts"][0]["id"]
+    # A rollout belonging to another task must not be archivable through this one.
+    assert client.get(f"/api/tasks/{task_id}/archive", params={"rollout_id": rid}).status_code == 404
+    mine = client.get(f"/api/tasks/{other}/archive", params={"rollout_id": rid})
+    assert mine.status_code == 200
+    assert zipfile.ZipFile(io.BytesIO(mine.content)).namelist() == ["result.json"]

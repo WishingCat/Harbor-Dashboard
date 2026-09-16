@@ -230,7 +230,21 @@ curl --fail-with-body --show-error \
 
 响应中的 `task.status` 为 `pending`（待评审）、`approved`（通过）或 `changes_requested`（需修改），`reviews` 包含评审意见，`can_delete` 说明当前 Key 是否有权删除该任务。人工质检状态与上传结果中的 Reward 分开保存。
 
-### 删除任务
+### 打包下载任务文件
+
+`GET /api/tasks/{task_id}/archive` 返回 ZIP。可选 `prefix` 指定文件夹（省略则打包全部文件），可选 `rollout_id` 打包某个 Rollout 的文件；ZIP 以该文件夹为根目录。
+
+```bash
+curl --fail --show-error -o task.zip \
+  "$HARBOR_API_URL/api/tasks/TASK_ID/archive?project_id=$HARBOR_PROJECT_ID"
+
+curl --fail --show-error -o tests.zip \
+  "$HARBOR_API_URL/api/tasks/TASK_ID/archive?project_id=$HARBOR_PROJECT_ID&prefix=tests"
+```
+
+与单文件下载 `GET /api/files/{file_id}/download` 一样，这是公开阅读接口，不需要 Bearer Key。网页端在文件目录里右键文件或文件夹即可下载。
+
+## 删除任务
 
 仅任务作者或管理员可以删除：
 

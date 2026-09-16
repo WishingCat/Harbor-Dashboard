@@ -9,6 +9,7 @@ Agent 接入指南位于网站左侧底部的「API 接口」，也可访问 `/?
 - 项目任务库：按「项目 → 任务集 → Harbor 任务」组织内容，所有登录用户均可新建项目与任务集。
 - 文件导入：上传单个 ZIP 或任务目录，任务名称自动采用 ZIP 文件名或目录名，简介可选。
 - 产物阅读：桌面任务库常驻项目导航，进入任务后切换为常驻文件目录；手机使用抽屉切换文件。上传包包含 Rollout 结果时展示已有轨迹、验证结果和产物，没有结果时只展示任务内容。
+- 文件下载：在文件目录里右键单个文件即可下载原文件，右键文件夹打包成 ZIP 下载；目录顶部的按钮打包当前全部文件。查看 Rollout 结果时，打包范围是该 Rollout 的文件。
 - 任务标签：上传时从物理、化学、生物、医学、人工智能、具身智能、编程中选择，也可自定义；任务库可按标签筛选。
 - 协作评审：注册、登录、发表评论，提交合格或需修改评价。
 - 删除任务：任务作者或管理员可在任务页删除自己上传的任务，网页与 API 均可操作。
@@ -195,6 +196,8 @@ python3 scripts/harbor_upload.py delete TASK_ID --project "$HARBOR_PROJECT_ID"
 ```
 
 上传输出包含质检页面链接，加 `--json` 可读取 `task_url` 字段，直接分享给评审者。客户端无需第三方依赖；两个上传接口均支持重试去重。部署后可从平台 `/api/agent-client.py` 下载客户端。
+
+打包下载接口为 `GET /api/tasks/{task_id}/archive`，可选 `prefix`（文件夹路径，省略则打包全部）和 `rollout_id`（打包某个 Rollout 的文件）。它与单文件下载 `GET /api/files/{file_id}/download` 一样属于公开阅读接口，不需要 Token。
 
 接口包括 `/api/v1/projects`、`/api/v1/task-sets`、`/api/v1/tags`、`/api/v1/tasks`、`/api/v1/tasks/{task_id}`（GET 与 DELETE）和 `/api/v1/tasks/{task_id}/rollouts`，通过 `Authorization: Bearer KEY` 认证。交互式文档在 `/docs`，OpenAPI 定义在 `/openapi.json`。完整参数、curl 示例、权限与错误处理见站内「API 接口」页面或 [Agent API 使用说明](docs/AGENT_API.md)。
 
