@@ -45,6 +45,12 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
     catch (e) {setActivePanel(null); setError((e as Error).message);}
   }, [id, initialRolloutId, project.id, taskSetId]);
   useEffect(() => {void load();}, [load]);
+  // Deleting cannot be undone, so the button arms first and disarms on its own.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const timer = setTimeout(() => setConfirmDelete(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmDelete]);
   useEffect(() => {
     const media = matchMedia(DRAWER_QUERY);
     const update = () => {
@@ -115,12 +121,6 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
     const fileList = next === 'task' ? files : rollout?.files || [];
     setSelected(fileList.find(f => f.path.endsWith(next === 'task' ? 'instruction.md' : 'result.json')) || fileList[0] || null);
   }
-  // Deleting cannot be undone, so the button arms first and disarms on its own.
-  useEffect(() => {
-    if (!confirmDelete) return;
-    const timer = setTimeout(() => setConfirmDelete(false), 5000);
-    return () => clearTimeout(timer);
-  }, [confirmDelete]);
   async function removeTask() {
     if (deleting) return;
     if (!confirmDelete) {setConfirmDelete(true); return;}
