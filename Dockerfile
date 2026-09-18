@@ -14,7 +14,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HARBOR_BOOTSTRAP_DIR=/app/deploy/bootstrap
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
+# This host reaches PyPI only through the domestic mirror: the build container
+# inherits the daemon's HTTP(S)_PROXY, whose NO_PROXY does not cover
+# files.pythonhosted.org, so the default index stalls there. Override
+# PIP_INDEX_URL to build from somewhere with direct PyPI access.
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir --timeout 60 --retries 5 \
+        --index-url "$PIP_INDEX_URL" --trusted-host mirrors.aliyun.com -r requirements.txt \
     && groupadd --gid 10001 harbor \
     && useradd --uid 10001 --gid harbor --no-create-home --shell /usr/sbin/nologin harbor \
     && mkdir -p /app/data \
