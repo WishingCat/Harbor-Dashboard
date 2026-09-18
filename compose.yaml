@@ -4,7 +4,9 @@ services:
     ports:
       - "10323:8000"
     env_file:
-      - ${HARBOR_ENV_FILE:-./deploy/runtime.env}
+      # 真实配置只存在于部署机器上，不入 git（.gitignore 已忽略）。
+      # 相对路径以本文件所在目录为基准；换位置用 HARBOR_ENV_FILE 覆盖。
+      - ${HARBOR_ENV_FILE:-./.uniapi.keys}
     environment:
       HARBOR_DATA_DIR: /app/data
       HARBOR_BOOTSTRAP_DIR: /app/deploy/bootstrap

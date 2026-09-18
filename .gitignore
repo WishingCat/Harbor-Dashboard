@@ -9,6 +9,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# 本机运行配置与密钥：真实值只存在于部署机器上，不入库（见 README）
+.uniapi.keys
+deploy/runtime.env
 *.log
 *.sqlite3
 *.sqlite3-*

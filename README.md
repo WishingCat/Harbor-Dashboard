@@ -26,7 +26,8 @@ Agent 接入指南位于网站左侧底部的「API 接口」，也可访问 `/?
 需要 Node.js 22、Python 3.12 或更新版本。
 
 ```bash
-cp deploy/runtime.env .env
+# 复制示例配置，然后在 .env 中填入 TRANSLATION_API_KEY
+cp .env.example .env
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 npm ci
@@ -60,10 +61,15 @@ npm run build
 ```bash
 git clone git@github.com:WishingCat/Harbor-Dashboard.git
 cd Harbor-Dashboard
+# 后端配置不入库，必须先创建，否则 compose 的所有子命令
+# （含 up / logs / down）都会报 "env file ... not found" 并以退出码 14 结束。
+# 变量清单见 .env.example；换位置用 HARBOR_ENV_FILE 指定。
+cp .env.example .uniapi.keys
+$EDITOR .uniapi.keys          # 至少填入 TRANSLATION_API_KEY
 docker compose up --build -d
 ```
 
-访问 `http://服务器IP:10323`（本机为 <http://localhost:10323>）。`compose.yaml` 将容器的 8000 端口发布到主机的 10323 端口，改端口只需修改该映射。首次启动会从仓库中的部署快照恢复 133 个账户、2 个项目和 1 个任务集，可直接使用原用户名和密码登录；快照不含任务，任务库从空开始。后端会读取 `deploy/runtime.env` 中的翻译配置。需要自定义配置时，复制该文件为 `.env`，然后运行 `HARBOR_ENV_FILE=.env docker compose up --build -d`。
+访问 `http://服务器IP:10323`（本机为 <http://localhost:10323>）。`compose.yaml` 将容器的 8000 端口发布到主机的 10323 端口，改端口只需修改该映射。首次启动会从仓库中的部署快照恢复 133 个账户、2 个项目和 1 个任务集，可直接使用原用户名和密码登录；快照不含任务，任务库从空开始。后端配置由 `compose.yaml` 的 `env_file` 注入，默认读取仓库根目录下的 `.uniapi.keys`（用 `cp .env.example .uniapi.keys` 建起，权限 640、属组 `docker`，变量清单见 `.env.example`）；该文件已被 `.gitignore` 忽略，密钥不进入 git、也不进入镜像。换位置用 `HARBOR_ENV_FILE` 指向别处，例如 `HARBOR_ENV_FILE=/path/to/keys docker compose up --build -d`；改了配置需 `docker compose up -d --force-recreate` 重建容器才生效。
 
 镜像会先构建前端，再以非 root 用户启动后端。`harbor-data` 命名卷保存数据库与上传文件，重新构建镜像或重启容器后仍保留。
 
@@ -210,7 +216,7 @@ python3 scripts/harbor_upload.py delete TASK_ID --project "$HARBOR_PROJECT_ID"
 
 翻译由平台统一提供，登录用户可直接在文档中开启“双语阅读”，无需个人 API Key。设置页在托管模式下只显示服务摘要，管理员也不通过网页修改路由或密钥。
 
-本私有仓库的实际网关地址、模型和密钥保存在 `deploy/runtime.env`，Docker Compose 自动读取。该文件已排除于 Docker 构建上下文，密钥只注入后端进程。自定义服务器配置可以复制为 `.env` 并通过 `HARBOR_ENV_FILE=.env` 选择；非 Docker 启动使用 `--env-file deploy/runtime.env`。
+实际网关地址、模型和密钥保存在仓库根目录的 `.uniapi.keys`（权限 640、属组 `docker`，变量清单见 `.env.example`），由 Docker Compose 的 `env_file` 读取。该文件已被 `.gitignore` 忽略，既不在 git 中，也被排除于 Docker 构建上下文，密钥只注入后端进程。换位置用 `HARBOR_ENV_FILE` 指定，例如 `HARBOR_ENV_FILE=/path/to/keys docker compose up -d --force-recreate`；非 Docker 启动使用 `uvicorn ... --env-file .uniapi.keys`。
 
 ```dotenv
 TRANSLATION_MANAGED=true
@@ -246,7 +252,7 @@ TRANSLATION_TRUST_ENV=false
 | `HARBOR_PUBLIC_URL` | 平台对外基础地址，用于生成 API 返回的质检链接；共享部署必须设置，留空时链接跟随请求的 `Host` 头 |
 | `COOKIE_SECURE` | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true` |
 
-数据库文件为数据目录中的 `harbor.sqlite3`。备份时停止服务后复制**整个数据目录**，同时保存数据库与上传文件；恢复时将完整备份放回相同数据目录。本私有仓库按部署要求跟踪 `deploy/bootstrap/`（用户密码哈希、任务与文件）和 `deploy/runtime.env`（后端配置及翻译密钥）。运行时的 `data/`、个人 `.env`、日志和缓存仍不跟踪。仓库及含账户快照的镜像应保持私有。
+数据库文件为数据目录中的 `harbor.sqlite3`。备份时停止服务后复制**整个数据目录**，同时保存数据库与上传文件；恢复时将完整备份放回相同数据目录。本私有仓库按部署要求跟踪 `deploy/bootstrap/`（用户密码哈希、任务与文件）。后端运行配置**不入库**：真实配置只保存在部署机器的 `.uniapi.keys`（已被 `.gitignore` 忽略），原先跟踪的 `deploy/runtime.env` 已从仓库与磁盘移除，忽略规则保留以防旧路径重新落回。git 历史中仍能读到它的旧副本，其中的密钥已在网关轮换作废。运行时的 `data/`、个人 `.env`、日志和缓存仍不跟踪。仓库及含账户快照的镜像应保持私有。
 
 快照仅用于**空数据卷的首次初始化**。已有数据库时完全跳过恢复，因此重新部署不会重置密码或覆盖后续上传。原站的浏览器登录会话未迁移，用户需要在新站重新登录。仓库快照不是运行时自动备份；后续数据仍需备份完整数据目录。更新快照时，先停止服务，再运行 `python -m server.deployment --source data --destination deploy/bootstrap-next`，核对后替换 `deploy/bootstrap/` 并提交。
 
@@ -258,11 +264,12 @@ TRANSLATION_TRUST_ENV=false
 src/                 React 前端
 server/              FastAPI API、导入与数据存储
 scripts/             Agent 上传客户端
-deploy/              私有部署快照与后端运行配置
+deploy/              私有部署快照（后端运行配置已移到仓库之外）
 docs/                API 使用说明
 data/                本地数据库与上传文件（运行时生成）
 dist/                前端生产构建（构建时生成）
-.env.example         环境变量示例
+.env.example         环境变量示例（唯一的配置模板）
+.uniapi.keys         本机运行配置与密钥（不入库，需自行创建）
 Dockerfile           多阶段生产镜像
 compose.yaml         单实例启动与持久化卷
 ```
