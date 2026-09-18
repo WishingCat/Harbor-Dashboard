@@ -197,6 +197,7 @@ curl --fail-with-body --show-error \
     "task_set_id": "TASK_SET_ID",
     "task_set_name": "九月任务质检",
     "title": "my-task",
+    "summary": "根据实验设置预测目标量由低到高的顺序，提交 rankings.json，不要求绝对数值。",
     "status": "pending",
     "tags": ["物理", "人工智能"],
     "rollouts_count": 2

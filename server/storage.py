@@ -73,6 +73,7 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL,
+                    summary TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL, category TEXT NOT NULL, difficulty TEXT NOT NULL,
                     tags TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
                     author_id TEXT, author TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -117,6 +118,11 @@ class Store:
                 db.execute("ALTER TABLE users ADD COLUMN external_id TEXT")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username COLLATE NOCASE)")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id_unique ON users(external_id)")
+            # Derived from the task's own briefing; a plain column needs none of the
+            # foreign-key ceremony the project_id/task_set_id additions required.
+            task_text_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}
+            if "summary" not in task_text_columns:
+                db.execute("ALTER TABLE tasks ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
             db.commit()
             columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}
             if "project_id" not in columns:

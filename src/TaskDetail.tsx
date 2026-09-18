@@ -171,7 +171,8 @@ export default function TaskDetail({id, project, taskSetId, backLabel = '任务�
     <div className="detail-heading">
       <div className="reader-heading-top"><button className="back-link" onClick={onBack}><ArrowLeft size={15} />{backLabel}</button><div className="detail-title"><h1>{task.title}</h1><Status status={task.status} /></div><div className="reader-heading-actions"><button className="button ghost small" aria-expanded={infoOpen} aria-controls="task-information" onClick={() => setInfoOpen(!infoOpen)}>任务信息<ChevronDown size={14} className={infoOpen ? 'is-open' : ''} /></button><button className="button ghost small" onClick={() => void shareTask()}><Link2 size={15} />分享任务</button>{detail.can_delete && <button className={`button ghost small task-delete ${confirmDelete ? 'armed' : ''}`} disabled={deleting} title="删除后任务文件、Rollout 与评审都会一并移除" onClick={() => void removeTask()}>{deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{confirmDelete ? '确认删除' : '删除任务'}</button>}</div></div>
       <div className="task-information" id="task-information" hidden={!infoOpen}>
-        {task.description && <p>{task.description}</p>}
+        {(task.summary || task.description) && <p>{task.summary || task.description}</p>}
+      {task.summary && task.description && <p className="task-description">上传简介：{task.description}</p>}
         <div className="detail-meta"><Avatar name={task.author} size="small" /><span>{task.author}</span><span>{categories[task.category] || task.category}</span><span>{difficultyLabels[task.difficulty]}</span>{task.tags.map(t => <span className="tag" key={t}>{t}</span>)}{task.is_demo && <span className="demo-label">临时任务</span>}<span className="detail-updated">更新于 {relativeTime(task.updated_at)}</span></div>
       </div>
     </div>

@@ -268,6 +268,75 @@ def task_metadata(files):
         return {}
 
 
+TASK_DOCUMENT = "任务说明.md"
+TASK_SUMMARY_HEADING = "任务摘要"
+TASK_SUMMARY_LIMIT = 600
+H1_LINE = re.compile(r"#\s+(\S.*?)\s*#*\s*$")
+SECTION_LINE = re.compile(r"#{2,3}\s+(\S.*?)\s*#*\s*$")
+ANY_HEADING = re.compile(r"#{1,6}\s")
+
+
+def slugify(text: str) -> str:
+    """Keep the identifier ASCII-only; CJK would otherwise survive \\w unchanged."""
+    return re.sub(r"[^\w-]+", "-", (text or "").lower()).strip("-")[:80] or "task"
+
+
+def task_slug(title: str, task_id: str) -> str:
+    return slugify(title) + "-" + task_id[:6]
+
+
+def task_document(files, prefix: str = "") -> dict[str, str]:
+    """Read the task's own briefing: its H1 title and 任务摘要 section.
+
+    Pure, bounded text extraction. Absent, oversized, undecodable or
+    heading-less documents yield empty strings, so an upload is never rejected
+    over an optional document — the same posture as task_metadata.
+    """
+    empty = {"title": "", "summary": ""}
+    pinned = prefix + TASK_DOCUMENT
+    if pinned in files:
+        path = pinned
+    else:
+        # Fall back to the shallowest document anywhere in the upload: a bundle
+        # nested deeper than one directory reports no prefix at all.
+        candidates = [p for p in files if PurePosixPath(p).name == TASK_DOCUMENT]
+        if not candidates:
+            return empty
+        path = min(candidates, key=lambda p: (p.count("/"), p))
+    data = files.get(path, b"")
+    if not data or len(data) > TEXT_LIMIT:
+        return empty
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return empty
+    # Split on newlines only: splitlines() would also break on U+2028/U+0085.
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+    title = ""
+    collecting = False
+    body: list[str] = []
+    for line in lines:
+        if ANY_HEADING.match(line):
+            if collecting:
+                break
+            section = SECTION_LINE.match(line)
+            if section and section.group(1).startswith(TASK_SUMMARY_HEADING):
+                # Older briefings head this section 任务摘要与研究背景.
+                collecting = True
+                continue
+            if not title:
+                first = H1_LINE.match(line)
+                if first:
+                    title = re.sub(r"\s+", " ", first.group(1)).strip()
+            continue
+        if collecting:
+            body.append(line)
+
+    summary = " ".join(part for line in body if (part := re.sub(r"\s+", " ", line).strip()))
+    return {"title": title[:200], "summary": summary[:TASK_SUMMARY_LIMIT]}
+
+
 def task_bundle_prefix(files):
     """Locate the task's own root, without requiring the upload to be a Harbor bundle.
 

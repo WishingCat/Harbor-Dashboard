@@ -28,6 +28,9 @@
   .library-page .task-title { max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.55; font-size: 12px; text-align: left; }
   .library-page .task-subline { flex-wrap: wrap; gap: 4px; font-size: 10px; }
   .library-page .task-subline .tag { display: none; }
+  /* A wrapped 88-character slug would run to three or four lines in the 73% column. */
+  .library-page .task-slug { display: none; }
+  .library-page .task-summary { font-size: 11px; }
   .library-page .task-table .task-icon { width: 28px; height: 30px; }
   .library-page .task-table .status { font-size: 11px; gap: 4px; padding: 3px 5px; }
   .detail-workspace-bar { position: sticky; top: 0; z-index: 12; background: white; }
@@ -54,7 +57,7 @@
 /* Secondary text remains dark enough to read on all light surfaces. */
 .workspace-main .muted, .page-heading p, .breadcrumb,
 .metric-top, .metric-note, .metric:last-child .metric-note,
-.section-tabs > button, .task-table th, .task-subline,
+.section-tabs > button, .task-table th, .task-subline, .task-summary,
 .task-subline .demo-label, .task-subline .tag, .date-cell, .author-cell,
 .table-footer, .workspace-footer, .activity-item p, .activity-item time,
 .activity-item.compact p, .activity-item .activity-description,
@@ -107,6 +110,27 @@
 .task-title { font-size: 14px; font-weight: 550; color: var(--text); }
 .task-title:hover { color: var(--accent); }
 .task-subline { margin-top: 5px; font-size: 12px; line-height: 17px; }
+/* Task summary from 任务说明.md: at most two lines, full text on the native tooltip.
+   -webkit-line-clamp is deliberate and is the only such rule in this codebase; it
+   degrades to a clipped third line where unsupported. Do not "simplify" it to the
+   single-line ellipsis used elsewhere — that would silently drop the feature. */
+.task-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-width: 100%;
+  margin-top: 4px;
+  /* .task-table sets white-space: nowrap and it is inherited; this reset is what
+     lets the summary wrap at all. */
+  white-space: normal;
+  /* "anywhere" (not "break-word") also lowers the intrinsic min-content width, so a
+     179-character summary cannot stretch the first column. */
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.task-slug { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }
 .task-subline .tag, .demo-label { font-size: 11px; }
 .tag { color: var(--muted); background: #f5f7f6; border-color: var(--border); }
 .task-icon, .task-icon[class*='category-'] {
@@ -119,6 +143,8 @@
 .difficulty.hard, .difficulty.medium, .difficulty.easy { color: var(--muted); }
 .date-cell, .author-cell, .table-footer { font-size: 12px; }
 .author-cell { margin-top: 3px; }
+/* The rollouts table shows the task title here, which is now a Chinese heading. */
+.rollouts-table .author-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rollout-count, .rollout-count svg, .row-chevron { color: var(--muted); }
 .status { font-size: 12px; font-weight: 500; }
 .status.pending { color: var(--muted); background: #edf0ee; }

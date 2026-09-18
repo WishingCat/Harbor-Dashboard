@@ -5,7 +5,7 @@ Stack: React TypeScript + Vite frontend; FastAPI + SQLite backend. Same-origin `
 Types:
 - User `{id,name,email,username:string|null,role:'admin'|'member'}`
 - Project `{id,name,tasks_count,rollouts_count,reviews_count}`
-- Task `{id,project_id,slug,title,description,category,difficulty:'easy'|'medium'|'hard',tags:string[],status:'pending'|'approved'|'changes_requested',author:string,created_at,updated_at,files_count,rollouts_count,reviews_count,is_demo:boolean}`
+- Task `{id,project_id,slug,title,summary,description,category,difficulty:'easy'|'medium'|'hard',tags:string[],status:'pending'|'approved'|'changes_requested',author:string,created_at,updated_at,files_count,rollouts_count,reviews_count,is_demo:boolean}`
 - File `{id,path,size,kind:'task'|'rollout',mime_type}`
 - Rollout `{id,name,agent,model,status:'passed'|'failed'|'unknown',reward:number|null,duration_seconds:number|null,created_at,files:File[]}`
 - Review `{id,author,author_id,verdict:'approved'|'changes_requested'|'comment',body,created_at}`

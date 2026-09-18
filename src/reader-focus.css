@@ -13,6 +13,8 @@
 .reader-heading-actions .is-open { transform: rotate(180deg); }
 .reader-focus .task-information { padding: 18px 0 6px; }
 .reader-focus .task-information > p { margin: 0 0 14px; max-width: 1120px; color: var(--text); font-size: 14px; line-height: 1.8; }
+/* The uploader's own optional note, kept below the derived task summary. */
+.reader-focus .task-information > p.task-description { margin-top: -6px; color: var(--muted); font-size: 13px; }
 .reader-focus .detail-meta { gap: 8px 16px; font-size: 13px; line-height: 1.7; }
 .reader-focus .detail-meta .tag, .reader-focus .detail-updated { display: inline-flex; }
 .reader-focus .detail-updated { margin-left: 0; }

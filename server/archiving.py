@@ -3,17 +3,22 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 
 from fastapi import HTTPException
 
-from .imports import is_task_material, parse_rollout, read_uploads, task_bundle_prefix, task_metadata, trial_groups, upload_title
+from .imports import is_task_material, parse_rollout, read_uploads, task_bundle_prefix, task_document, task_metadata, task_slug, trial_groups, upload_title
 from .storage import now, uid
+
+# Text derived purely from the uploaded files. It carries no uploader intent, so it
+# stays out of the logical-upload digest: Idempotency-Keys issued before these fields
+# existed keep matching, and a retry in flight across a deploy is not rejected.
+DERIVED_FIELDS = frozenset({"summary", "slug_base"})
 
 
 def payload_digest(prepared, project_id, task_set_id=None):
     # Compare the logical upload, not transport boundaries or ZIP timestamps.
-    canonical = {"project_id": project_id, "fields": prepared["fields"],
+    fields = {key: value for key, value in prepared["fields"].items() if key not in DERIVED_FIELDS}
+    canonical = {"project_id": project_id, "fields": fields,
                  "files": [[path, hashlib.sha256(data).hexdigest()] for path, data in sorted(prepared["files"].items())]}
     if task_set_id is not None:
         canonical["task_set_id"] = task_set_id
@@ -38,9 +43,15 @@ class ArchiveManager:
         imported = await read_uploads(files, paths)
         prefix = task_bundle_prefix(imported)
         metadata = task_metadata(imported)
-        title = title.strip() or upload_title(files, paths) or metadata.get("title") or "未命名任务"
+        document = task_document(imported, prefix)
+        submitted_title = title.strip()
+        source_title = submitted_title or upload_title(files, paths) or metadata.get("title") or "未命名任务"
+        # An explicitly submitted title still wins. Otherwise the task's own Chinese
+        # H1 replaces the auto-derived pack name, while the slug keeps that pack name.
+        display_title = submitted_title or document["title"] or source_title
         return {"files": imported, "prefix": prefix, "fields": {
-            "title": title[:200], "description": description.strip(),
+            "title": display_title[:200], "slug_base": source_title, "summary": document["summary"],
+            "description": description.strip(),
             "category": category.strip() or metadata.get("category", "software-engineering"),
             "difficulty": difficulty or metadata.get("difficulty", "medium"),
             "tags": [t.strip() for t in (tag_list if tag_list is not None else metadata.get("tags", [])) if t.strip()],
@@ -66,12 +77,12 @@ class ArchiveManager:
         task_set_id = task_set_id or self.store.ensure_default_task_set(db, project_id)
         fields, imported = prepared["fields"], prepared["files"]
         task_id = uid()
-        slug = (re.sub(r"[^\w-]+", "-", fields["title"].lower()).strip("-")[:80] or "task") + "-" + task_id[:6]
+        slug = task_slug(fields.get("slug_base") or fields["title"], task_id)
         timestamp = now()
         db.execute("""INSERT INTO tasks
-            (id,slug,title,description,category,difficulty,tags,status,author_id,author,created_at,updated_at,is_demo,project_id,task_set_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
-            task_id, slug, fields["title"], fields["description"], fields["category"], fields["difficulty"],
+            (id,slug,title,summary,description,category,difficulty,tags,status,author_id,author,created_at,updated_at,is_demo,project_id,task_set_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            task_id, slug, fields["title"], fields.get("summary", ""), fields["description"], fields["category"], fields["difficulty"],
             json.dumps(fields["tags"], ensure_ascii=False), "pending", user["id"], user["name"], timestamp, timestamp, 0, project_id, task_set_id,
         ))
         groups = trial_groups(imported, task_prefix=prepared["prefix"])

@@ -40,7 +40,7 @@ def archive_response_docs(kind):
     }
     if kind == "task":
         example["task"] = {
-            "id": task_id, "slug": "example-task", "title": "example-task", "description": "",
+            "id": task_id, "slug": "example-task", "title": "example-task", "summary": "", "description": "",
             "category": "General", "difficulty": "Medium", "tags": ["物理", "人工智能"], "status": "pending",
             "author": "Example User", "created_at": "2026-09-15T00:00:00+00:00",
             "updated_at": "2026-09-15T00:00:00+00:00", "is_demo": False,
